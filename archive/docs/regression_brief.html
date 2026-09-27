@@ -1,0 +1,225 @@
+<title>Rain In, Depth Out</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600&display=swap">
+<style>
+:root {
+  --ground: #eef2f1; --surface: #fafbfa; --raised: #f2f5f4;
+  --ink: #16242a; --muted: #5b6b70; --rule: #cbd5d4;
+  --rain: #2b5ea7; --gw: #9a5b1e; --bad: #9b2c2c; --good: #2f7d4f;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0e1416; --surface: #151d20; --raised: #1b2528;
+    --ink: #e1e8e6; --muted: #8fa0a4; --rule: #28353a;
+    --rain: #7fa9e8; --gw: #d39a5b; --bad: #e88a86; --good: #6cc08f;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0e1416; --surface: #151d20; --raised: #1b2528;
+  --ink: #e1e8e6; --muted: #8fa0a4; --rule: #28353a;
+  --rain: #7fa9e8; --gw: #d39a5b; --bad: #e88a86; --good: #6cc08f;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--ground); color: var(--ink); font: 15.5px/1.55 var(--body);
+       padding-inline: clamp(14px, 4vw, 28px); padding-block: 26px 40px; }
+.page { max-width: 880px; margin-inline: auto; display: grid; gap: 22px; }
+
+header h1 { margin: 0; font: 600 clamp(30px, 5vw, 44px)/1 var(--display); letter-spacing: .01em; }
+header p { margin: 8px 0 0; color: var(--muted); max-width: 62ch; }
+.kicker { font: 500 11px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--rain); }
+
+section { display: grid; gap: 10px; }
+h2 { margin: 0; font: 600 23px/1.1 var(--display); }
+h2::before { content: attr(data-n); color: var(--muted); font-family: var(--mono); font-size: 13px;
+             margin-right: 8px; }
+p { margin: 0; max-width: 68ch; }
+.muted { color: var(--muted); font-size: 14px; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 13px 15px;
+        display: grid; gap: 7px; align-content: start; }
+.card .name { font: 600 19px/1.1 var(--display); }
+.card .role { font: 500 10px/1 var(--display); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.card ul { margin: 0; padding-left: 17px; display: grid; gap: 4px; font-size: 14.5px; }
+.card .score { font: 500 15px/1 var(--mono); color: var(--rain); }
+
+table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+.scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 6px; background: var(--surface); }
+th, td { text-align: left; padding: 7px 11px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+tbody tr:last-child td { border-bottom: 0; }
+th { font: 500 10px/1.3 var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+tr.best td { background: var(--raised); font-weight: 600; }
+.bar { display: inline-block; height: 8px; border-radius: 2px; background: var(--rain); vertical-align: middle;
+       margin-right: 6px; }
+.bar.neg { background: var(--bad); }
+.pos { color: var(--good); } .neg { color: var(--bad); }
+
+.callout { background: var(--surface); border-left: 3px solid var(--gw); border-radius: 0 6px 6px 0;
+           padding: 12px 15px; display: grid; gap: 6px; }
+.callout b { color: var(--ink); }
+code { font: 13.5px var(--mono); background: var(--raised); padding: 1px 5px; border-radius: 3px; }
+footer { color: var(--muted); font-size: 13.5px; border-top: 1px solid var(--rule); padding-top: 14px; }
+</style>
+
+<div class="page">
+  <header>
+    <div class="kicker">Groundwater capstone · Model brief</div>
+    <h1>Rain In, Depth Out</h1>
+    <p>Two regression models, both answering the same question: given how much rain fell, how deep should the
+      water be in this well right now? One is a straight line, one is a tree ensemble. The gap between them, and
+      the gap between both and the rain itself, is the finding.</p>
+  </header>
+
+  <section>
+    <h2 data-n="01">What is being predicted</h2>
+    <p>Every well is measured four times a year. The target is not the raw depth — a deep well in Rajasthan and a
+      shallow one in Kerala are not comparable — but each reading's <b>distance from that well's own normal</b>
+      for that season, in metres. Positive means deeper than usual, which is worse.</p>
+    <div class="callout">
+      <div><code>target = depth this November − this well's own average November</code></div>
+      <div class="muted">209,388 readings · 2,759 wells · 19 states · 2000–2022 · CGWB wells and the IMD 0.25°
+        rainfall grid, nothing else.</div>
+    </div>
+    <p class="muted">Inputs are rainfall windows before the reading date (3, 6, 12, 24 and 36 months of total rain,
+      each also as a percentage of that well's own normal, plus last monsoon, rainy-day count and wettest day),
+      then which season the reading is, the well type and the aquifer.
+      Year, district, latitude, longitude and the well's own normal are blocked by name so the model cannot
+      memorise a place instead of learning from rain.</p>
+  </section>
+
+  <section>
+    <h2 data-n="02">The two models</h2>
+    <div class="cards">
+      <div class="card">
+        <div class="role">Model 1 · the honest baseline</div>
+        <div class="name">Ridge regression</div>
+        <ul>
+          <li>One linear fit per season (January, May, August, November) — the monsoon works differently in each.</li>
+          <li>Penalised coefficients, because the rain windows overlap heavily and would otherwise fight.</li>
+          <li>Readable: every coefficient is "one more mm of rain, this many cm of water".</li>
+        </ul>
+        <div class="score">test skill +0.086</div>
+      </div>
+      <div class="card">
+        <div class="role">Model 2 · the one deployed</div>
+        <div class="name">Gradient-boosted trees</div>
+        <ul>
+          <li>LightGBM, which can bend: a dry aquifer responds to 500 mm very differently from a wet one.</li>
+          <li><b>Constrained</b> so more rain can never predict deeper water. Without that guard the scenario map
+            would show absurdities.</li>
+          <li>Powers the "what if the monsoon were bigger" numbers in the atlas.</li>
+        </ul>
+        <div class="score">test skill +0.167</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2 data-n="03">How they were scored</h2>
+    <p>Years are split once and not revisited: <b>2001–2014 to train</b>, <b>2015–2017 to choose</b> settings, and
+      <b>2018–2022 kept sealed</b> until the end. Every well's "normal" is rebuilt inside each fold from training
+      years only, so no future reading leaks backwards.</p>
+    <p><b>Skill</b> is the honest yardstick: how much better than simply saying "this well will read its usual
+      value". Zero means the model added nothing. Negative means it made things worse.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Prediction</th><th>Val. error (m)</th><th>Val. skill</th><th>Test error (m)</th>
+          <th>Test skill</th></tr></thead>
+        <tbody>
+          <tr><td>Its usual value <span class="muted">(baseline)</span></td><td class="num">2.488</td>
+            <td class="num">0.000</td><td class="num">2.607</td><td class="num">0.000</td></tr>
+          <tr><td>Last year's reading <span class="muted">(baseline)</span></td><td class="num">2.654</td>
+            <td class="num neg">−0.138</td><td class="num">2.605</td><td class="num">+0.001</td></tr>
+          <tr><td>Ridge regression</td><td class="num">2.426</td><td class="num pos">+0.049</td>
+            <td class="num">2.492</td><td class="num pos">+0.086</td></tr>
+          <tr class="best"><td>Gradient-boosted trees</td><td class="num">2.400</td><td class="num pos">+0.069</td>
+            <td class="num">2.379</td><td class="num pos">+0.167</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">Read it as: rainfall explains roughly a sixth of how far a well sits from its own normal.
+      Small, but real — and it survives every trap below.</p>
+  </section>
+
+  <section>
+    <h2 data-n="04">Proof it is really using the rain</h2>
+    <p>A model can score well by accident. So the same model was refit three more times on deliberately broken
+      rainfall. If it still scored, the skill was never about rain.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>What the model was fed</th><th>Skill</th><th></th></tr></thead>
+        <tbody>
+          <tr class="best"><td>The real rain</td><td class="num pos">+0.077</td>
+            <td><span class="bar" style="width:77px"></span></td></tr>
+          <tr><td>Rain shuffled between years</td><td class="num">+0.004</td>
+            <td><span class="bar" style="width:4px"></span></td></tr>
+          <tr><td>Rain shuffled between wells</td><td class="num neg">−0.007</td>
+            <td><span class="bar neg" style="width:7px"></span></td></tr>
+          <tr><td>Rain from four years later</td><td class="num neg">−0.017</td>
+            <td><span class="bar neg" style="width:17px"></span></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">All three collapse to nothing. The four-year shift matters most: the model looks back up to
+      36 months, so a one-year shift would still overlap real rain and quietly pass.</p>
+  </section>
+
+  <section>
+    <h2 data-n="05">Why this target, and not another</h2>
+    <p>Three targets were built and scored the same way before one was chosen.</p>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>Target</th><th>Rows</th><th>Best model</th><th>Test skill</th></tr></thead>
+        <tbody>
+          <tr class="best"><td>Depth against the well's own normal</td><td class="num">209,388</td>
+            <td>Trees</td><td class="num pos">+0.191</td></tr>
+          <tr><td>Monsoon rise, May → November</td><td class="num">39,773</td><td>Trees</td>
+            <td class="num pos">+0.120</td></tr>
+          <tr><td>Net change, November → November</td><td class="num">51,200</td><td>Ridge</td>
+            <td class="num pos">+0.113</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">All three carry real rainfall signal, and interestingly the linear model wins on year-to-year
+      change while the trees win on level. The level target was deployed because it has five times the data and
+      the clearest skill. Tuning was not the lever: 24 hyperparameter settings were searched and the whole spread
+      was 0.007 skill — the features decide this model, not the settings.</p>
+  </section>
+
+  <section>
+    <h2 data-n="06">What these models cannot do</h2>
+    <div class="cards">
+      <div class="card">
+        <div class="role">Limit</div>
+        <div class="name">They cannot forecast rain</div>
+        <p class="muted">Monsoon totals barely relate from one year to the next, so no model here predicts next
+          year's rainfall. The user picks a monsoon size; the model answers for that size.</p>
+      </div>
+      <div class="card">
+        <div class="role">Limit</div>
+        <div class="name">They cannot separate pumping</div>
+        <p class="muted">Subtracting the rain-explained part to leave "extraction" was tried and withdrawn: split
+          the record in half and the two halves disagree (−0.31), while plain measured decline agrees (+0.27).</p>
+      </div>
+      <div class="card">
+        <div class="role">Limit</div>
+        <div class="name">Skill of 0.17 is modest</div>
+        <p class="muted">Most of what moves a well is local — pumping next door, canal water, the aquifer itself.
+          Rain is one real input among several, and the number says so honestly.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Models in <code>ml/bits_ml/models.py</code>, features in <code>dataset.py</code>, scoring in
+    <code>evaluate.py</code>, traps in <code>scripts/controls.py</code>. Reproduce with
+    <code>python -m bits_ml.evaluate --models ridge,lgbm</code>. Every number on this page is read from
+    <code>data/processed/model_results.csv</code>, <code>control_results.csv</code> and
+    <code>experiment_results.csv</code>.
+  </footer>
+</div>

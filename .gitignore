@@ -8,7 +8,8 @@ data/cgwb/*.csv
 data/*.zip
 
 # Built tables. All reproducible with `make data` or the pipeline steps.
-data/processed/
+# data/processed/ is an exception: it holds the week 1 merged dataset, which is
+# a named submission deliverable, so it is tracked.
 data/training/
 data/interim/
 data_cleaning/data/

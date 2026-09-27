@@ -1,0 +1,264 @@
+<title>What the Wells Say</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=Source+Sans+3:wght@400;600&display=swap">
+<style>
+:root {
+  --ground: #eef2f1; --surface: #fafbfa; --raised: #f2f5f4;
+  --ink: #16242a; --muted: #5b6b70; --rule: #cbd5d4;
+  --rain: #2b5ea7; --gw: #9a5b1e; --warn: #9b2c2c; --good: #2f7d4f;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0e1416; --surface: #151d20; --raised: #1b2528;
+    --ink: #e1e8e6; --muted: #8fa0a4; --rule: #28353a;
+    --rain: #7fa9e8; --gw: #d39a5b; --warn: #e88a86; --good: #6cc08f;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0e1416; --surface: #151d20; --raised: #1b2528;
+  --ink: #e1e8e6; --muted: #8fa0a4; --rule: #28353a;
+  --rain: #7fa9e8; --gw: #d39a5b; --warn: #e88a86; --good: #6cc08f;
+}
+* { box-sizing: border-box; }
+body { background: var(--ground); color: var(--ink); font: 16px/1.6 var(--body);
+       padding-inline: clamp(16px, 4vw, 32px); padding-block: 28px 64px; }
+.page { max-width: 780px; margin-inline: auto; }
+
+header.masthead { border-bottom: 2px solid var(--ink); padding-bottom: 14px; margin-bottom: 8px; }
+.eyebrow { font: 500 12px/1 var(--display); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+h1 { font: 600 clamp(34px, 6vw, 50px)/1 var(--display); margin: 8px 0 6px; letter-spacing: .01em; }
+.standfirst { margin: 0; color: var(--muted); font-size: 18px; max-width: 62ch; }
+.byline { margin-top: 10px; font: 400 13px/1.5 var(--mono); color: var(--muted); }
+
+h2 { font: 600 clamp(24px, 3.4vw, 30px)/1.1 var(--display); margin: 44px 0 4px; text-wrap: balance; }
+h2 + .kicker { margin: 0 0 14px; color: var(--muted); font-size: 15px; }
+h3 { font: 600 19px/1.25 var(--display); margin: 26px 0 6px; }
+p { margin: 0 0 14px; }
+strong { font-weight: 600; }
+a { color: var(--rain); }
+
+.lead { font-size: 17px; }
+.summary { background: var(--surface); border: 1px solid var(--rule); border-radius: 6px; padding: 18px 20px; margin: 18px 0 8px; }
+.summary ul { margin: 0; padding-left: 20px; }
+.summary li { margin-bottom: 9px; }
+.summary li:last-child { margin-bottom: 0; }
+
+table { border-collapse: collapse; width: 100%; font-size: 15px; margin: 8px 0 18px; }
+caption { text-align: left; font: 500 12px/1.4 var(--display); letter-spacing: .1em;
+          text-transform: uppercase; color: var(--muted); padding-bottom: 6px; }
+th, td { padding: 7px 10px; border-bottom: 1px solid var(--rule); text-align: right; }
+th:first-child, td:first-child { text-align: left; }
+thead th { font: 500 12px/1.3 var(--display); letter-spacing: .06em; text-transform: uppercase;
+           color: var(--muted); border-bottom: 1px solid var(--ink); }
+tbody tr:last-child td { border-bottom: 1px solid var(--rule); }
+td.num, th.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.wrap { overflow-x: auto; }
+
+.evidence { border-left: 3px solid var(--rain); background: var(--surface); padding: 10px 14px;
+            margin: 0 0 18px; font-size: 14px; color: var(--muted); }
+.evidence code { font-family: var(--mono); font-size: 13px; color: var(--ink); }
+.finding { border-left: 3px solid var(--warn); background: var(--surface); padding: 14px 16px; margin: 18px 0; }
+.finding p:last-child { margin-bottom: 0; }
+.limit { border-left: 3px solid var(--gw); background: var(--surface); padding: 12px 16px; margin: 0 0 14px; }
+.limit p:last-child { margin-bottom: 0; }
+
+.pill { display: inline-block; font: 500 11px/1 var(--display); letter-spacing: .1em; text-transform: uppercase;
+        padding: 3px 8px; border-radius: 999px; border: 1px solid; }
+.pill.pass { color: var(--good); border-color: color-mix(in srgb, var(--good) 45%, transparent); }
+.pill.fail { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+
+pre { background: var(--raised); border: 1px solid var(--rule); border-radius: 5px; padding: 12px 14px;
+      overflow-x: auto; font: 13px/1.6 var(--mono); margin: 0 0 16px; }
+footer { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--rule); color: var(--muted); font-size: 14px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="page">
+<header class="masthead">
+  <div class="eyebrow">Capstone · Groundwater decline attribution</div>
+  <h1>What the Wells Say</h1>
+  <p class="standfirst">Separating rainfall from extraction in India's falling water tables — what 2,759 wells and 25 years of rain grids can support, and what they cannot.</p>
+  <div class="byline">BITS Pilani PGCP in AI &amp; ML · Group 18 · CGWB 2000–2022 · IMD 0.25° 1998–2022</div>
+</header>
+
+<p class="lead">The project set out to build a rainfall-expected baseline for each district's groundwater and treat the gap between that baseline and the observed level as a proxy for extraction pressure. The models were built and they work. The attribution proxy does not survive its own reproducibility test, and the central result of this report is that finding, together with what the data does support.</p>
+
+<div class="summary">
+  <ul>
+    <li><strong>Rainfall genuinely explains part of how a well moves.</strong> Skill against each well's own normal, on test years never seen: 0.19 for water level, 0.12 for monsoon recharge, 0.11 for the year's net change.</li>
+    <li><strong>That skill is real, not leakage.</strong> It collapses to zero when rain is shuffled between years or between wells, and when the model is handed rain from four years later.</li>
+    <li><strong>Hyperparameters are not the constraint.</strong> A 24-setting search moved skill by 0.007 and re-selected the defaults already in the code.</li>
+    <li><strong>The extraction proxy does not reproduce.</strong> Measured on the two halves of the record separately, districts <em>disagree</em> with themselves at −0.31, and worse where monitoring is denser.</li>
+    <li><strong>What does reproduce is the decline itself</strong> (+0.24, rising to +0.29 with five or more wells), so districts are ranked on measured decline and the rain model explains rather than orders them.</li>
+  </ul>
+</div>
+
+<h2>The data</h2>
+<p class="kicker">Two sources, no others.</p>
+
+<p>CGWB quality-controlled water levels give 2,759 wells with four readings a year from 2000 to 2022 — 219,258 readings, 86.4% of the possible grid. IMD's 0.25° daily rainfall grid covers 1998–2022, the two extra years giving the longest rain window somewhere to start. Nothing else enters the modelling: no satellite rainfall, no external climatology, no boundary files. District and state labels come from the CGWB file itself.</p>
+
+<p>Three properties of this data shape everything after it:</p>
+
+<div class="wrap">
+<table>
+  <caption>Where the data constrains the question</caption>
+  <thead><tr><th>Property</th><th class="num">Scale</th><th>Consequence</th></tr></thead>
+  <tbody>
+    <tr><td>Quality control kept 2,759 of 31,169 wells</td><td class="num">9%</td><td>Survivors are the steadier wells; decline is understated</td></tr>
+    <tr><td>Dug wells in unconfined aquifers</td><td class="num">94%</td><td>Findings are about shallow groundwater, not deep confined layers</td></tr>
+    <tr><td>May campaigns of 2020 and 2021</td><td class="num">1%</td><td>Lockdown years; nothing imputed, so seasonal targets lose those years</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Reading rain at a well</h2>
+<p class="kicker">Before any model, the rain has to arrive at the right place.</p>
+
+<p>IMD stores rainfall only at grid nodes 27.8 km apart, so rain at a well is an interpolation. Week 1 snapped each well to its nearest node. Two problems followed: 16 wells snapped onto sea cells and silently received zero rain, and nearest-node snapping is simply less accurate than weighting the four surrounding nodes.</p>
+
+<p>The grid itself can measure which is better. Drop half the nodes, predict them from the ones kept, and compare against their real values.</p>
+
+<div class="wrap">
+<table>
+  <caption>Predicting hidden grid nodes, 0.5° spacing</caption>
+  <thead><tr><th>Method</th><th class="num">Monthly error</th><th class="num">Error in 25-year mean</th></tr></thead>
+  <tbody>
+    <tr><td>Nearest node (Week 1)</td><td class="num">25.6%</td><td class="num">5.6%</td></tr>
+    <tr><td><strong>Masked bilinear (adopted)</strong></td><td class="num"><strong>17.7%</strong></td><td class="num"><strong>3.6%</strong></td></tr>
+    <tr><td>Bicubic</td><td class="num">17.7%</td><td class="num">3.6%</td></tr>
+    <tr><td>Inverse distance</td><td class="num">20.7%</td><td class="num">4.7%</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>The same test exposed a subtler error. Counting wet days on interpolated daily rain inflated them by 12% and flattened the wettest day by the same margin, because interpolation spreads light rain onto dry days. Counting at the nodes first and interpolating the counts removes it: +0.2% and −0.7%. Wells whose coordinates were rounded — 399 of them, some only to 0.1° — are sampled across their rounding box rather than at a false point.</p>
+
+<div class="evidence">Reproduce: <code>python -m scripts.interpolation_check</code>, <code>python -m bits_ml.rainfall</code></div>
+
+<h2>The two models</h2>
+<p class="kicker">Rainfall and groundwater are modelled separately, and joined at one point only.</p>
+
+<p>Rainfall is not forecast. Week 1 established that it cannot be: a SARIMA model only matched the long-term average, and one monsoon barely predicts the next. The rainfall model therefore describes each place — its own monthly normals, variability and trend — and generates scenarios as a percentage of that place's normal, so "+20% monsoon" is 42 mm at the driest well and 890 mm at the wettest. The groundwater model takes those rain values as its only time-varying inputs.</p>
+
+<p>Which quantity to predict is a modelling decision with a business meaning, so all three candidates were measured side by side rather than argued about.</p>
+
+<div class="wrap">
+<table>
+  <caption>Skill against each well's own normal, test years 2018–2022</caption>
+  <thead><tr><th>Target</th><th>The question it asks</th><th class="num">Ridge</th><th class="num">LightGBM</th></tr></thead>
+  <tbody>
+    <tr><td>Level</td><td>how far from normal the water stands</td><td class="num">0.086</td><td class="num">0.191</td></tr>
+    <tr><td>Monsoon rise</td><td>how much the monsoon puts back</td><td class="num">0.110</td><td class="num">0.120</td></tr>
+    <tr><td>Annual change</td><td>whether the year ended lower</td><td class="num">0.113</td><td class="num">0.053</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Annual change is the business question — a district that recharges every monsoon and still ends each year lower is the structural decline the brief asks about — and ridge is the stabler model on it, moving from 0.123 on validation to 0.113 on test where LightGBM swings from 0.120 to 0.053. Both models beat the "last year repeated" reference, which scores below zero everywhere.</p>
+
+<p>Tuning was tried and abandoned on evidence: a 24-setting random search spanned 0.007 of skill and selected the configuration already hard-coded, differing only in tree count. On test years that is 0.161 against 0.159, with the two models' predictions correlating 0.999 and differing by 1.2 cm at the median well. The features are the ceiling, not the settings.</p>
+
+<div class="evidence">Reproduce: <code>python -m scripts.experiments</code>, <code>python -m scripts.tune</code></div>
+
+<h2>Validation</h2>
+<p class="kicker">Tests designed to fail, and what happened when they were run.</p>
+
+<p>A score means nothing until the information behind it is removed and the score follows. Three controls were run on every target: rain shuffled across years within each well, rain swapped between wells in the same year, and rain taken from four years later — information no model can have.</p>
+
+<div class="wrap">
+<table>
+  <caption>Controls, skill on validation years</caption>
+  <thead><tr><th>Target</th><th class="num">As measured</th><th class="num">Years shuffled</th><th class="num">Wells shuffled</th><th class="num">Rain +4 years</th><th>Verdict</th></tr></thead>
+  <tbody>
+    <tr><td>Monsoon rise</td><td class="num">+0.124</td><td class="num">−0.004</td><td class="num">−0.010</td><td class="num">−0.016</td><td><span class="pill pass">pass</span></td></tr>
+    <tr><td>Level</td><td class="num">+0.077</td><td class="num">+0.004</td><td class="num">−0.007</td><td class="num">−0.017</td><td><span class="pill pass">pass</span></td></tr>
+    <tr><td>Annual change</td><td class="num">+0.123</td><td class="num">−0.001</td><td class="num">−0.008</td><td class="num">+0.015</td><td><span class="pill pass">pass</span></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>The impossible-rain control had to be rebuilt to mean anything. Shifted by a single year it scored +0.086 against a real +0.123 — not a leak, but an artefact: the feature set contains 24- and 36-month windows, so "next year" still contains most of this year's rain. The shift has to clear the longest window, which is why it is four years.</p>
+
+<p>Leakage rules are enforced in code rather than by care: each well's normal level and normal rain are computed from training years only and rebuilt inside every fold; test years 2018–2022 are scored once; models are held out both by year and by whole districts; and for attribution every year is predicted by a model that never saw it.</p>
+
+<div class="evidence">Reproduce: <code>python -m scripts.controls --target annual --model ridge</code></div>
+
+<h2>The finding</h2>
+<p class="kicker">The attribution proxy fails a test the rest of the pipeline passes.</p>
+
+<p>An extraction proxy claims to measure a persistent property of a place. Such a measure must agree with itself when computed on different stretches of the record. Splitting 2002–2012 from 2013–2022 and measuring every district independently in each half:</p>
+
+<div class="wrap">
+<table>
+  <caption>Agreement between halves of the record (correlation across districts)</caption>
+  <thead><tr><th>Measure</th><th class="num">≥3 wells</th><th class="num">≥5 wells</th><th class="num">≥8 wells</th></tr></thead>
+  <tbody>
+    <tr><td>Observed decline in the water table</td><td class="num">+0.24</td><td class="num">+0.29</td><td class="num">+0.27</td></tr>
+    <tr><td>Rain-adjusted gap (the extraction proxy)</td><td class="num">−0.31</td><td class="num">−0.37</td><td class="num">−0.35</td></tr>
+    <tr><td>Shuffled null</td><td class="num">±0.11</td><td class="num">±0.14</td><td class="num">±0.18</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="finding">
+  <p><strong>The proxy does not merely fail to reproduce — it reverses, and it reverses harder where monitoring is better.</strong> A district that looks like it is losing water beyond its rainfall in the first half tends to look like it is gaining in the second. Thin-district noise would fade with more wells; this strengthens, so it is systematic.</p>
+  <p>Two causes, both measurable. A mean of year-over-year changes telescopes to (first level − last) ÷ years, making it an endpoint statistic: the raw observed change reverses at −0.37 with no model involved at all. And the rain-expected change is the most reversing quantity in the data at −0.53, because rain anomalies mean-revert between decades, so subtracting it injects that reversal.</p>
+</div>
+
+<p>Nor can the decline be split into a weather part and a pumping part, which is the form a policy recommendation would need. The rain-expected trend in the level and the observed trend correlate <strong>−0.03</strong>: essentially unrelated. Subtracting them leaves a remainder with a wider spread (0.164 m/yr) than the fall it decomposes (0.127 m/yr), exceeding the whole fall in 38% of wells. An earlier version of this work classified districts into "recharge here, demand management there" on exactly that subtraction. That classification is withdrawn.</p>
+
+<p>A third, independent check agrees: districts with a large proxy should also draw down harder in the dry season, when pumping happens. Across every design tried — level residual trends, mean annual shortfall, year-centred shortfall — the correlation stayed between −0.09 and 0.00.</p>
+
+<h2>What the data does support</h2>
+<p class="kicker">A ranking on measured decline, and a what-if built on it.</p>
+
+<p>The observed decline reproduces, improves with coverage, and needs no model: the Theil–Sen trend of each well's November level, median across a district's wells, with a bootstrap interval. Ranked that way, the top of the list is where hydrology would expect it.</p>
+
+<div class="wrap">
+<table>
+  <caption>Fastest-falling districts, metres per year</caption>
+  <thead><tr><th>District</th><th>State</th><th class="num">Wells</th><th class="num">Decline</th><th class="num">Break-even monsoon</th></tr></thead>
+  <tbody>
+    <tr><td>Faridkot</td><td>Punjab</td><td class="num">4</td><td class="num">+0.28</td><td class="num">+47%</td></tr>
+    <tr><td>Anand</td><td>Gujarat</td><td class="num">3</td><td class="num">+0.22</td><td class="num">≤ +10%</td></tr>
+    <tr><td>Bathinda</td><td>Punjab</td><td class="num">7</td><td class="num">+0.21</td><td class="num">+29%</td></tr>
+    <tr><td>Chitrakoot</td><td>Uttar Pradesh</td><td class="num">7</td><td class="num">+0.15</td><td class="num">≤ +10%</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>The simulator answers the brief's question directly: a scenario year is built where every well receives its own normal rain with the monsoon scaled, the groundwater model predicts where the water would stand, and the gain is set against a year of that district's measured decline. Break-even is the monsoon that exactly cancels it. Of 272 ranked districts, 2 are structural at +20% — Faridkot and Bathinda, both in Punjab — while most are not falling at all. The model carries monotone constraints so that more rain can never predict deeper water, which is what makes the break-even search valid.</p>
+
+<p>Districts also group by behaviour rather than geography — normal rain and its variability, depth, seasonal swing, how closely that swing follows rain, and the decline rate. Six groups emerge across the 233 districts with enough record, the most interesting being 20 that are deep, strongly rain-responsive and the only group falling on average (+0.07 m/yr), spread across Madhya Pradesh, Uttar Pradesh, Haryana and Punjab. These are tendencies, not types: silhouette reaches 0.237 against 0.184 for structureless data of the same spread, and dropping a fifth of the districts reproduces the grouping at 0.72.</p>
+
+<div class="evidence">Reproduce: <code>python -m bits_ml.attribution</code>, <code>python -m bits_ml.whatif --grid</code>, <code>python -m scripts.clusters</code></div>
+
+<h2>Limitations</h2>
+
+<div class="limit"><p><strong>The gap is "not rain", never "pumping".</strong> Canal irrigation, cropping changes and land use push water levels the same way extraction does, and none of them are in this data.</p></div>
+<div class="limit"><p><strong>Survivorship runs through everything.</strong> Quality control kept 9% of wells and favours steady records, so decline is understated and the most stressed wells may be the ones that were dropped.</p></div>
+<div class="limit"><p><strong>No external validation has been done.</strong> Every check here is the data marking its own homework. CGWB's published extraction categories would be the first genuinely independent test, and they were deliberately not used, as this build is restricted to the two supplied datasets.</p></div>
+<div class="limit"><p><strong>District medians rest on few wells.</strong> The ranking requires three, and many districts have exactly that. Intervals are reported for this reason and should be read before any district is acted on.</p></div>
+
+<h2>Reproducing this</h2>
+<p>Every figure above comes from a command in the repository, run against the two supplied datasets. The suite is 96 tests.</p>
+
+<pre>python -m bits_ml.rainfall        # rain at each well from the IMD grid
+python -m bits_ml.groundwater     # CGWB readings as a long series
+python -m bits_ml.dataset         # the modelling table
+python -m scripts.experiments     # three targets, three feature sets, two models
+python -m scripts.controls        # the tests that must fail
+python -m bits_ml.attribution     # decline ranking, rain decomposition
+python -m bits_ml.whatif --grid   # break-even monsoon per district
+python -m scripts.clusters        # district groups and their stability
+pytest -q</pre>
+
+<footer>
+  <p>Sources: CGWB quality-controlled groundwater levels 2000–2022 (figshare, CC BY 4.0, doi 10.6084/m9.figshare.29293877.v3); IMD 0.25° gridded daily rainfall (imdpune.gov.in). Interactive companions: the district watchlist and the paired rainfall/well maps.</p>
+</footer>
+</div>

@@ -63,6 +63,7 @@ the rain history is carrying the model, which is what the attribution needs.
 | `decks/` | Review presentations |
 | `reports/` | Generated figures and tables |
 | `scripts/` | Data fetching and the rainfall cube builder |
+| `archive/` | The superseded first pipeline. Kept for the FastAPI endpoint, the what-if function and the atlas dashboard, which weeks 7 and 8 still need. See `archive/ARCHIVE.md` |
 
 ### Where to start reading
 
