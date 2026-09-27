@@ -1,0 +1,541 @@
+==========================================================================================
+RAIN OR PUMPS? — DATA CLEANING AND DATA BUILDING: WHAT HAS BEEN DONE
+BITS Pilani PGCP AI & ML capstone, group 18                      status as of 26 Sep 2026
+==========================================================================================
+
+This file records every step taken to turn the raw groundwater and rainfall data into a
+clean, aligned, model-ready dataset: what was wrong, how we found it, what we changed, the
+numbers before and after, and how each change was checked. Nothing was edited by hand; every
+table is rebuilt from the raw files by code in ml/ and data_cleaning/clean_gaps.ipynb.
+
+Companion documents (same folder):
+  README.md          the gaps and fixes, organised by gap
+  DATASETS.md        every dataset and table, and its role
+  MODELLING_GAPS.md  the suggested modelling approach tested; training-data gaps
+  data/core_dictionary.csv   every column of every table, with meaning and % missing
+
+
+------------------------------------------------------------------------------------------
+CONTENTS
+------------------------------------------------------------------------------------------
+  1. Goal and scope
+  2. Inputs
+  3. The pipeline at a glance
+  4. Groundwater (CGWB) cleaning
+  5. Rainfall (IMD) cleaning
+  6. Putting both on the same map: wells, grid cells, districts, states
+  7. Putting both on the same clock: four seasons
+  8. Putting both in the same unit: millimetres of water
+  9. Second pass: gaps closed by clean_gaps.ipynb
+ 10. Training data for the models
+ 11. Checks that were run, and their results
+ 12. What was produced
+ 13. Decisions taken, and why
+ 14. Gaps still open
+ 15. How to rebuild everything
+ 16. History
+
+
+==========================================================================================
+1. GOAL AND SCOPE
+==========================================================================================
+
+Project question: given the rain that fell, where should the groundwater be, and how much of
+the decline does rain NOT explain (the pressure from pumping)? That needs two very different
+datasets joined correctly:
+
+  groundwater  point measurements at wells, four times a year, depth in metres
+  rainfall     a daily grid of 0.25-degree cells, millimetres per day
+
+Reviewer feedback asked for proper data cleaning and data building on both. This work does
+both: it cleans each dataset on its own terms, then aligns them in space (same places), time
+(same periods) and unit (same quantity).
+
+Scope decisions:
+  - Years: rain 1998-2022, water levels 2000-2022. The raw file also has 2023-24 readings
+    (53,380); they are kept but not used, because there is no rain data for them (decision).
+  - The earlier model pipeline is set aside and archived in old/ (decision). The new data
+    is the baseline for all future models.
+
+
+==========================================================================================
+2. INPUTS
+==========================================================================================
+
+  CGWB raw archive   data/Quality_controlled_groundwater_levels_over_India.zip
+                     Input/1_India_GWLs_2000_2024_wells_within_India.csv
+                     32,299 wells, one column per reading (Jan/May/Aug/Nov 2000-2024),
+                     depth to water in metres below ground, plus location and construction.
+                     Also holds the source paper's code, outputs and the hydrogeological map.
+
+  CGWB published set data/cgwb/CGWB_India_filtered_GWLs_ref_sy_2000_2022.csv
+                     the source paper's quality-controlled 2,759 wells with specific yield.
+                     This is what the project used before; now kept as a control group.
+
+  Hydrogeological map  inside the zip: Hydrogeological_map/Hydrogeological_map.tif
+                     0.12-degree grid (243 x 241), five specific-yield classes.
+
+  IMD rainfall       data/imd_rainfall/imd_rf25_1998.nc ... imd_rf25_2022.nc
+                     25 yearly NetCDF files, 0.25-degree daily grid, 129 x 135 = 17,415
+                     points, mm/day; -999 outside India's land.
+
+  District outlines  data_cleaning/reference/districts.geojson
+                     724 districts in 36 states/UTs, post-2020 boundaries.
+
+
+==========================================================================================
+3. THE PIPELINE AT A GLANCE
+==========================================================================================
+
+  step  code (ml/)                      what it does
+  ----  ------------------------------  -----------------------------------------------------
+   1    bits_ml/ingest.py               all wells and readings from the raw archive; quality
+                                        flags; location from coordinates
+   2    bits_ml/grid.py                 grid cells, months; well->cell and cell->district links
+   3    bits_ml/rain_panel.py           monthly rain per cell; IMD zeros that are missing
+   4    bits_ml/panel.py                monthly tables at well, cell and district level
+   5    bits_ml/seasons.py              four seasons between readings; level change; storage
+   6    data_cleaning/clean_gaps.ipynb  specific yield from the map; aquifer type; reruns 4-5
+   7    scripts/core_report.py,         reports and evidence (groundwater, rain, mapping)
+        rain_grid_mapping.py, rain_report.py
+   8    bits_ml/training_data.py        model-ready rows, features, splits, rain sequences
+
+  Supporting: bits_ml/districts.py (outlines), bits_ml/rainfall.py (NetCDF reader,
+  interpolation), scripts/core_dictionary.py (data dictionary), 79 tests in ml/tests/.
+
+
+==========================================================================================
+4. GROUNDWATER (CGWB) CLEANING
+==========================================================================================
+
+4.1  The file we had been using was already filtered, and the filter was biased
+------------------------------------------------------------------------------------------
+Finding. Replaying the source paper's quality control on the raw file reproduces its 2,759
+wells exactly, which shows where the other 29,540 went:
+
+    raw file                                                   32,299 wells
+    has any reading 2000-22                                    29,537
+    no negative reading anywhere (drops the whole well)        28,612
+    AT LEAST TWO READINGS IN EVERY YEAR 2000-22                 2,876
+    no value repeating more than twice in a row                 2,759
+
+The fourth rule alone removes 25,736 wells. It tests completeness, not quality: a well with
+91 of 92 readings is dropped if one year has a single reading. The dropped wells deepen more
+often: 46% of the wells the rebuild adds are deepening, against 38% of the published ones.
+So the published set understates the decline.
+
+Change. Start from the raw file; drop nothing; flag problems instead (4.2); choose wells only
+at the end, as named "views":
+
+    view_strict      the published 2,759 wells (control group)        2,759 wells
+    view_modelling   a usable normal in all four campaigns             8,629 wells
+    view_training    a usable normal in three of the four (see 10)    11,455 wells
+
+("usable normal" = at least 5 valid readings in the training years 2000-2014.)
+
+4.2  Bad readings: flagged, never deleted
+------------------------------------------------------------------------------------------
+Each reading gets six flags. Flagged readings stay in well_obs; everything built on top uses
+only valid ones. Counts (data/qc_audit.csv):
+
+    flag                meaning                                        readings    wells
+    ------------------  ---------------------------------------------  ---------  -------
+    flag_negative       water above ground (flowing well or sign error)    1,429      925
+    flag_zero           exactly 0.000 m (NOT invalid on its own)          15,062    1,831
+    flag_zero_suspect   a zero in a well whose zeros are over 1/5 of its  13,488      753
+                        record: missing data written as 0
+    flag_below_bottom   water deeper than the well was drilled            26,257    2,755
+    flag_outlier        over 3 sigma from the well's OWN seasonal         9,587    7,485
+                        pattern (so a real long decline is not clipped)
+    flag_repeat_run     3+ identical readings in a row                    22,448    1,950
+    ------------------------------------------------------------------------------------
+    invalid (any of the above except a plain zero)                        59,977   11,426
+    valid                                                              1,065,392   31,356
+                                                                      (94.7% of 1,125,369)
+
+A plain zero is not invalid: shallow wells can fill to the surface in the monsoon.
+Bad data is concentrated: Telangana has 16.7% suspect zeros and 17.9% below-bottom readings,
+against 0.2% and 0.8% for dug wells nationally; bore wells and piezometers hold nearly all.
+
+4.3  Identity and coordinates
+------------------------------------------------------------------------------------------
+Finding. The station code was damaged by scientific notation (e.g. 1.4113E+14), so it
+cannot identify a well. 3,710 wells share a coordinate with another; 2,999 have coordinates
+rounded to a coarse grid.
+Change. Each well is keyed by its coordinates (well_uid), with a stable suffix where wells
+share a site. Rounded wells are flagged (coord_rounded) and their rain is averaged over the
+area their true position could be in. 3,253 wells have no usable drilled depth
+(depth_missing), so the below-bottom check skips them.
+
+4.4  Location from coordinates, not from district names
+------------------------------------------------------------------------------------------
+Finding. 610 district names mix spellings (Rajnadgaon/Rajnandgaon, Ranga reddy/Rangareddy,
+Jhunjhunu/Jhunjhunun, Viluppuram/Villupuram, ...), old and new names (Trichur/Thrissur,
+Belgaum/Belagavi) and boundary vintages (Telangana's 10 districts before 2016 beside its 33
+after). Names cannot be joined reliably to anything.
+Change. Each well is placed in the district outline its coordinates fall in; that becomes
+its district and state. The file's labels are kept as cgwb_district / cgwb_state.
+
+    placed inside an outline                                   32,205 wells
+    just off a coast or border, nearest outline within 5 km        87
+    more than 5 km from every outline (no district)                  7
+
+The file's district name agrees with the outline for 82.5% of wells; nearly all the rest
+are renames and splits, which is exactly what placing by coordinates fixes.
+
+4.5  State labels that are wrong
+------------------------------------------------------------------------------------------
+Finding. 489 wells stand in a different state from the one the file gives (mostly wells
+filed under Andhra Pradesh standing in Maharashtra, Rajasthan, Gujarat). Either the label or
+the coordinates must be wrong.
+Test. A well's level should move with its neighbours. For the 262 such wells with enough
+readings, the level correlates with wells at its coordinates at a median 0.39, and with
+wells of its labelled district at 0.17; the coordinates fit better for 69%.
+Change. The label is taken as wrong; the wells stay where their coordinates put them;
+state_agrees = False records the disagreement. Andhra Pradesh and Telangana count as one
+state (2014 split).
+
+4.6  Readings have a month but no day
+------------------------------------------------------------------------------------------
+Every reading is placed on the 15th of its month (Jan, May, Aug, Nov). The true day is
+unknown, so season boundaries are uncertain by about +/- 2 weeks.
+
+4.7  Some survey rounds barely happened
+------------------------------------------------------------------------------------------
+Share of modelling wells read: May 2020 1%, May 2021 1%, Aug 2012 3%, Jan 2016 12%,
+Aug 2020 41%. Nothing is filled in; changes bridge the gap explicitly (7.3).
+
+
+==========================================================================================
+5. RAINFALL (IMD) CLEANING
+==========================================================================================
+
+5.1  -999 outside land
+------------------------------------------------------------------------------------------
+12,451 of the 17,415 grid points are coded -999 (sea, outside India). Read as missing, never
+as 0 mm: a missing value summed as zero would invent a dry day. 4,964 land cells remain,
+the same in every year (checked).
+
+5.2  Structural checks of the raw grid
+------------------------------------------------------------------------------------------
+All 25 files: every day of the year present (365/366), same grid layout, no negative values.
+Largest daily value 979 mm (2022, north-east): consistent with real extremes there; kept.
+
+5.3  Zeros that are really missing data  (found during the rain report; fixed)
+------------------------------------------------------------------------------------------
+Finding. Besides -999, IMD writes exactly 0.0 mm on every day of a year in some land cells
+with no rain gauge nearby: 669 cell-years in 109 cells, mostly the edges of the grid
+(Arunachal Pradesh 57 cells, Gujarat 14, Mizoram 11, Manipur 6, Rajasthan 4, Haryana 3,
+West Bengal 1). A further 665 monsoon cell-months read 0 where that month's median is over
+100 mm. Example: Saiha district (Mizoram) read 0 mm in 1998-2006, 2011 and 2012, and
+2,000-3,000 mm in other years, which produced a false +1,296 mm/decade "trend".
+Change.
+  - rain_panel flags these cell-months suspect_zero (8,693 in total) and sets them missing.
+  - seasons blanks their days, so a season touching one is incomplete, not dry.
+  - every average over cells (a well's four cells, a district's cells) now uses only cells
+    with data and renormalises their weights; rain_cover records the share that had data.
+Effect. Saiha: 2,538 mm a year with 31% variability (was 1,402 mm and 100%). 26 districts
+and 30 modelling wells were affected. 189 well-months have no rain left (every cell around
+the well was flagged) and stay missing.
+
+5.4  Rain at a well: interpolation, not the nearest cell
+------------------------------------------------------------------------------------------
+A well rarely sits on a grid point, and one near a cell edge gets most of its rain from the
+neighbour. Rain at a well is interpolated from the four surrounding points, with weights
+renormalised over land points (bridge_well_cell). Tested by hiding grid points and
+predicting them back: monthly error 17.7% against 25.6% for the nearest point. Wet days and
+the wettest day are counted at the grid points first, then interpolated (bias +0.2% and
+-0.7%, against +12% and -12% the other way round).
+
+
+==========================================================================================
+6. PUTTING BOTH ON THE SAME MAP
+==========================================================================================
+
+6.1  Grid cell -> district -> state, by area
+------------------------------------------------------------------------------------------
+Each grid point is the centre of a 0.25 x 0.25 degree box (about 28 km a side). Each box is
+cut by the district outlines; the overlap in km2 is kept (bridge_cell_district):
+
+    area km2           = overlap in degrees2 x 111.2^2 x cos(latitude)
+    frac_of_cell       = overlap / box
+    weight_in_district = overlap / the district's total gridded land
+
+District rain = sum over its cells of (cell rain x weight_in_district). State rain uses the
+same overlaps summed by state. Results:
+
+    cell x district pairs            10,272
+    land cells mapped                 4,873 of 4,964 (91 lie beyond the drawn border)
+    districts with rain                 720 of 724 (the 4 missed are islands)
+    cells split across districts      3,449;  across states 950
+    gridded land                       3.25 million km2 (India's official area 3.29)
+
+Before this, a district's rain was averaged over the cells its wells stood in: districts
+without wells had no rain (702 reached) and shared cells counted in full for each district.
+
+6.2  Evidence (scripts/rain_grid_mapping.py -> data/report/rain_grid_mapping.txt)
+------------------------------------------------------------------------------------------
+Rebuilt from scratch and checked: identical to the stored table; weights sum to 1 in every
+district; median gridded/outline area ratio 1.000. Worked example, Pune, May-Aug 2019,
+computed by hand from the raw NetCDF: 903.353 mm, matching the table to 0.00003 mm. A plain
+mean of Pune's cells would give 1,182.6 mm, because 16 of its 36 cells lie mostly outside it.
+One flaw in the outline file is recorded: the new Vav-Tharad district overlaps its parent
+Banaskantha in 9 cells by a few percent; left as drawn.
+
+
+==========================================================================================
+7. PUTTING BOTH ON THE SAME CLOCK: FOUR SEASONS
+==========================================================================================
+
+7.1  Why not months or calendar quarters
+------------------------------------------------------------------------------------------
+Rain is daily; levels are read four times a year. A Jul-Sep quarter would straddle the
+August reading and mix rain the level has already answered with rain it has not. So a
+season runs from the day after one reading to the next reading, cut on the 15th:
+
+    season    from     to       days     closed by          label
+    Nov-Jan   Nov 16   Jan 15    61      January reading    post-monsoon
+    Jan-May   Jan 16   May 15   120/121  May reading        dry
+    May-Aug   May 16   Aug 15    92      August reading     early monsoon
+    Aug-Nov   Aug 16   Nov 15    92      November reading   late monsoon
+
+99 seasons in all, Jan-May 1998 to Aug-Nov 2022 (only seasons fully inside the rain record).
+
+7.2  Season rain is summed from the daily grid
+------------------------------------------------------------------------------------------
+The cut falls mid-month, so no monthly table can produce these totals. Checked against the
+raw NetCDF for sample cells and seasons (including one crossing a year boundary and a leap
+year): maximum difference 0.00004 mm.
+
+7.3  A missing reading is bridged, never filled
+------------------------------------------------------------------------------------------
+The change is taken from the last valid reading, up to one year back; span_seasons says how
+far; rain is summed over the whole span to match. In the modelling set 88% of changes come
+from the season just before.
+
+
+==========================================================================================
+8. PUTTING BOTH IN THE SAME UNIT
+==========================================================================================
+
+A water level is a stock (how full the aquifer is at one moment); rain is a flow (water
+arriving over a period). Rain in a season explains the CHANGE in level over that season, not
+the level. Specific yield (Sy, the share of the rock that holds water) converts the change:
+
+    delta_h_m          = depth now - depth at previous reading      (+ = water fell)
+    storage_change_mm  = -delta_h_m x Sy x 1000                     (+ = water gained)
+    recharge_ratio     = storage_change_mm / rain over the same span  (only if >= 25 mm)
+
+Median result, modelling wells:
+
+    season    level change    rain     share of rain stored
+    Nov-Jan   falls 0.65 m      7 mm   -
+    Jan-May   falls 1.42 m     39 mm   -
+    May-Aug   RISES 1.94 m    482 mm   +11.6%
+    Aug-Nov   falls 0.15 m    359 mm   about 0
+
+The May-Aug figure sits inside CGWB's own published infiltration range (8-15%). Outside the
+monsoon the ratio is a net loss per mm of rain, not recharge.
+
+
+==========================================================================================
+9. SECOND PASS: GAPS CLOSED BY clean_gaps.ipynb
+==========================================================================================
+
+9.1  Specific yield from the hydrogeological map
+------------------------------------------------------------------------------------------
+Finding. The raw file has no Sy. The first pass filled 29,419 wells with the median of their
+state and aquifer type (a guess). The map in the archive holds five classes (0.018 folded
+metasediments/aquitard, 0.020 jointed crystalline, 0.023 fractured crystalline, 0.043
+consolidated sedimentary, 0.130 alluvium).
+Test. Sampled at the published wells, the map returns the published value for 100% of the
+2,872 that fall on a map cell. Against the map, the guesses were a different class for
+8,996 wells, and for 75% of those off by more than 1.5x.
+Change. Every well takes its Sy from the map: 29,307 directly, 112 coastal wells from the
+nearest map cell within two cells; published values unchanged (2,880). All modelling wells
+now have a map-based Sy class; rock_class names the rock. Old values kept as sy_ingest.
+
+9.2  Aquifer type and well type
+------------------------------------------------------------------------------------------
+Finding. aquifer is "-" or "Not available" for 13,312 wells (1,697 modelling); well_type is
+"-" for 2,239. Of dug wells with a recorded aquifer type, 99.6% are unconfined (13,912 of
+13,964); dug-cum-bore 100% (17 of 17). Bore (64%), tube (80%), piezometer (77%) are mixed.
+Change. Blank dug wells -> Unconfined (6,308 wells, 1,229 modelling). Other blanks ->
+Unknown (7,004 wells, 468 modelling); blank well types -> Unknown. aquifer_source records
+cgwb / inferred_dug_well / unknown; originals kept as aquifer_cgwb, well_type_cgwb.
+Aquifer type now known or inferred for 94.6% of modelling wells.
+
+9.3  Rebuilt the tables that carry Sy and aquifer; built fact_cell_season_full (rain per
+     cell per season with the wells in the cell); refreshed the data dictionary. Assertions
+     at the end of the notebook check all of it; running it twice gives the same result.
+
+
+==========================================================================================
+10. TRAINING DATA FOR THE MODELS
+==========================================================================================
+
+10.1  A suggested modelling approach was tested first (MODELLING_GAPS.md section 1)
+------------------------------------------------------------------------------------------
+Suggested: an RNN reading 30 days of rain to predict rain at the well on day 31, feeding its
+own predictions back. Tested on 300 random cells, 2018-22: the last 30 days predict the next
+day at R2 0.145, worse than the calendar average (0.17); fed back, skill falls to the
+average within a week and the forecast's spread shrinks to a third of reality. Rain at the
+wells is already observed, so it is not a target. Kept from the suggestion: distance
+weighting, the error cost, "rain in -> groundwater out", and comparing two architectures.
+
+10.2  Four states restored
+------------------------------------------------------------------------------------------
+Finding. Requiring all four readings excluded every well in Kerala (0 of 1,947) and Assam
+(0 of 478) and all but 4 in West Bengal and Odisha: their raw record has no May reading.
+Change. view_training needs three of four: 11,455 wells in 27 states and 598 districts;
+Kerala 703, West Bengal 701, Odisha 837, Assam 211. Their Jan -> Aug change spans two
+seasons, with rain summed to match.
+
+10.3  What was built (data/training/)
+------------------------------------------------------------------------------------------
+    tabular.parquet     694,253 well-season rows with a target
+                        train 2000-2014: 489,707 | valid 2015-2017: 85,250 |
+                        test 2018-2022: 119,296; plus 5 folds of whole districts
+    features (25)       this season's rain, rain since the previous reading, span, % of
+                        normal, wet days, wettest day, normal, rain_cover, season length;
+                        rain 1-3 seasons before; rain over the last 4, 8, 12 seasons and each
+                        as % of normal; Sy, drilled depth, normal annual rain; categories:
+                        season, aquifer, well type, rock class
+    target              delta_h_m (alternatives: storage_change_mm, anomaly_ref_m)
+    sequence_cells.npz  weekly rain for the 52 weeks up to each reading, per land cell
+                        (99 x 52 x 4,964), 51 MB; stencil.parquet + a loader build any
+                        well's sequence (for a recurrent model)
+    feature_spec.csv    role of every column (feature, target, id, excluded, ...)
+
+10.4  Leakage guards
+------------------------------------------------------------------------------------------
+Never inputs: any past water level, the year, coordinates, district, state. The build stops
+if one is listed as a feature. Rain and level normals come from 2000-2014 only.
+
+
+==========================================================================================
+11. CHECKS THAT WERE RUN, AND THEIR RESULTS
+==========================================================================================
+
+    check                                                              result
+    ----------------------------------------------------------------   -------------------
+    rebuild reproduces the published 2,759 wells                       exact
+    every raw reading present and judged (valid + invalid = all)        yes
+    season rain vs raw NetCDF, incl. year boundary and leap year        within 0.00004 mm
+    grid->district mapping rebuilt from scratch vs stored               identical
+    district weights sum to 1                                           all 720 districts
+    Pune by hand from raw NetCDF vs table                               within 0.00003 mm
+    gridded land vs India's area                                        3.25 vs 3.29 M km2
+    hydrogeological map vs published Sy                                 100% of 2,872
+    labelled state vs coordinates (level correlation)                   coordinates win 69%
+    national deficient monsoons vs IMD's record (2002, 2004, 2009,      all five match
+      2014, 2015)
+    52-week sequence total vs one-year table rain                       within a day's rain
+    May-Aug share of rain stored vs CGWB infiltration range 8-15%       11.6%
+    notebook re-run gives the same result                               yes
+    automated tests (ml/tests)                                          79 pass
+
+
+==========================================================================================
+12. WHAT WAS PRODUCED  (data_cleaning/data/, rebuilt, not in git)
+==========================================================================================
+
+    table                   one row per                                  rows
+    ----------------------  -------------------------------------------  ----------
+    well_master             well (all), with flags, location, Sy, views      32,299
+    well_obs                reading, flagged, never dropped               1,125,369
+    dim_cell                grid cell                                        17,415
+    dim_month               month 1998-01 .. 2022-12                            300
+    dim_season              season Jan-May 1998 .. Aug-Nov 2022                  99
+    bridge_well_cell        well x its rain cells (weights)                 129,267
+    bridge_cell_district    land cell x district (area)                      10,272
+    well_cell_weights       well, weight within its cell                     32,299
+    fact_cell_month         cell x month: rain (suspect zeros flagged)    1,489,200
+    fact_cell_month_full    ... plus the wells in the cell                1,489,200
+    fact_well_month         well x month (modelling view)                 2,588,700
+    fact_district_month     district x month                                216,000
+    fact_cell_season        cell x season: rain                             491,436
+    fact_cell_season_full   ... plus the wells in the cell                  491,436
+    fact_well_season        well x season: rain, level, change, storage     854,271
+    fact_district_season    district x season                                71,280
+    training/tabular        well x season with a target (training view)    694,253
+
+    reports (data/report/): core_report.txt (groundwater), rain_report.txt (rain, 10
+    sections), rain_grid_mapping.txt (mapping evidence), and their CSV tables.
+    data dictionary: core_dictionary.csv (16 tables, 289 columns).
+
+
+==========================================================================================
+13. DECISIONS TAKEN, AND WHY
+==========================================================================================
+
+  - Flag, don't drop. Any rule can be changed later without re-ingesting.
+  - Coordinates over names for location; tested on the 489 conflicting wells (4.5).
+  - Readings on the 15th; seasons between readings, not calendar quarters (7.1).
+  - Rain pairs with the change in level, not the level (8).
+  - Missing is missing: no reading, rain value or season is ever filled in.
+  - 2023-24 out of scope: no rain for those years.
+  - The old pipeline archived in old/; the new data is the baseline.
+  - Rain is an input, never a target: it is observed, and cannot be forecast from its own
+    past (10.1). "Future" groundwater will be asked with scenario rain (e.g. +20%).
+  - Three of four campaigns for training, to keep Kerala, Assam, West Bengal and Odisha.
+
+
+==========================================================================================
+14. GAPS STILL OPEN
+==========================================================================================
+
+    gap                                   size                    handling
+    ------------------------------------  ----------------------  ------------------------
+    rain explains little on its own       season rain vs change:  expected; the rest is the
+                                          correlation -0.08..-0.16 signal. Pumping, crops,
+                                                                  canals are not in the data
+    aquifer type unknown                  468 modelling wells     kept as Unknown
+    reading day unknown                   all readings            +/- 2 weeks, stated
+    thin survey rounds                    May 2020/21 at 1%       left missing; bridged
+    changes spanning several seasons      17% of training rows    span_seasons as an input
+    extreme changes                       0.24% beyond +/-20 m    robust loss when training
+    wells drop out over time              10,619 (2005) ->        also score on stable wells
+                                          8,053 (2022)
+    Sy is a class, not a measurement      all wells               stated; delta_h_m in m is
+                                                                  unaffected
+    rain-gauge density changes over time  IMD grid                stated
+    Western Ghats 2004-07 rain            Pune's cells 2-3x       likely the 2005 floods;
+                                                                  stated
+    wells are not a random sample         80% shallow dug wells   stated
+    edge cases                            7 wells no district,    reported, left as is
+                                          4 island districts,
+                                          91 cells off-outline
+
+
+==========================================================================================
+15. HOW TO REBUILD EVERYTHING
+==========================================================================================
+
+From ml/, with the raw files in data/:
+
+    python -m bits_ml.ingest
+    python -m bits_ml.grid
+    python -m bits_ml.rain_panel
+    python -m bits_ml.panel
+    python -m bits_ml.seasons
+    (run data_cleaning/clean_gaps.ipynb top to bottom)
+    python -m scripts.core_report
+    python -m scripts.rain_grid_mapping
+    python -m scripts.rain_report
+    python -m bits_ml.training_data
+    pytest -q
+
+The notebook must be re-run after any re-run of ingest (which rewrites well_master).
+
+
+==========================================================================================
+16. HISTORY
+==========================================================================================
+
+    c3fd780  cleaned, aligned well and rainfall layer; coordinates for location; seasons;
+             clean_gaps.ipynb; README and DATASETS
+    6012fc2  IMD missing-as-zero fix; rain report and mapping evidence; training data;
+             MODELLING_GAPS
+    (next)   old pipeline, Atlas UI and notebooks moved to old/; this summary
+==========================================================================================

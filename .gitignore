@@ -1,0 +1,40 @@
+# ---------------------------------------------------------------------------
+# Raw inputs. Large, public, and fetched rather than tracked.
+# scripts/fetch_data.py brings them back. Nothing here is needed to train:
+# data/derived/rain_cube.npz is tracked and carries the whole rainfall record.
+# ---------------------------------------------------------------------------
+data/imd_rainfall/*.nc
+data/cgwb/*.csv
+data/*.zip
+
+# Built tables. All reproducible with `make data` or the pipeline steps.
+data/processed/
+data/training/
+data/interim/
+data_cleaning/data/
+pipeline/data/processed/*
+pipeline/data/raw/*
+!pipeline/data/**/.gitkeep
+
+# Model checkpoints other than the one we publish in models/artifacts/
+pipeline/models/*.joblib
+*.ckpt
+
+# Scratch
+_to_delete/
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+env/
+.DS_Store
+*.swp
+~$*
+*.tmp
+
+# Rendered previews of the docs, not the docs themselves
+docs/*.pdf
+page-*.jpg
