@@ -42,8 +42,13 @@ Validation 2015-2017, every model on the same rows, target `delta_h_m`:
 | LightGBM on tabular | 1.526 | 2.435 | 0.431 |
 | transformer, sequence + tabular | 1.531 | 2.461 | 0.418 |
 | transformer, sequence only | 1.641 | 2.618 | 0.342 |
+| BiLSTM, 6-channel sequence + tabular | 1.521 | 2.460 | 0.419 |
+| BiLSTM, sequence only | 1.554 | 2.499 | 0.400 |
 
-Held-out test 2018-2022, transformer: MAE 1.457 m, RMSE 2.302 m, R² 0.439.
+Held-out test 2018-2022, transformer: MAE 1.457 m, RMSE 2.302 m, R² 0.439;
+BiLSTM: MAE 1.449 m, RMSE 2.298 m, R² 0.441. Five district folds: transformer
+R² 0.486, BiLSTM R² 0.481. BiLSTM details, and a rain-sensitivity caveat that
+matters for the what-if tool, in [models/BILSTM_RESULTS.md](models/BILSTM_RESULTS.md).
 
 The transformer matches LightGBM. That is the claim: attention over the raw weekly
 rainfall series recovers gradient boosting on hand-engineered rain windows, without
@@ -58,6 +63,8 @@ the rain history is carrying the model, which is what the attribution needs.
 | `data_cleaning/` | District outlines and the gap-closing notebook that the pipeline reads |
 | `pipeline/` | The data pipeline: raw archive to clean core tables to a training set |
 | `models/` | Model code: the direct training-table builder, the transformer, training and reporting |
+| `bilstm-data/` | The BiLSTM copy of the training data: same rows, a 6-channel weekly sequence. See `bilstm-data/README.md` |
+| `kaggle/` | Pushes the BiLSTM data and code to Kaggle and runs training on a GPU |
 | `notebooks/` | Exploration and the gap-closing notebook |
 | `docs/` | Problem statement, execution plan, methodology notes, the end-to-end review |
 | `decks/` | Review presentations |
@@ -75,6 +82,7 @@ the rain history is carrying the model, which is what the attribution needs.
 | What mbgl, Sy and the rest mean | `docs/03_glossary.docx` |
 | The model contract and the commands | `models/START_HERE.md` |
 | The measured results | `models/RESULTS.md` |
+| The BiLSTM and the transformer side by side | `models/BILSTM_RESULTS.md` |
 
 ## The data
 

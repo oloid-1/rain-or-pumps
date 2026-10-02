@@ -5,7 +5,7 @@
 #   make all      the three above, in order
 PY ?= python3
 
-.PHONY: all data cube train cv report test fetch clean-built
+.PHONY: all data cube train cv report bilstm-data bilstm test fetch clean-built
 
 all: data train report
 
@@ -29,6 +29,14 @@ cv:
 report:
 	$(PY) models/attention_report.py
 
+## the BiLSTM copy of the training data (bilstm-data/out/)
+bilstm-data:
+	$(PY) bilstm-data/build_bilstm_data.py
+
+## BiLSTM training, locally; the full run goes to Kaggle with `python kaggle/push.py`
+bilstm:
+	cd models && $(PY) train_bilstm.py --epochs 25
+
 ## the pipeline's own test suite
 test:
 	cd pipeline && pytest -q
@@ -39,4 +47,4 @@ fetch:
 
 ## remove everything that can be rebuilt
 clean-built:
-	rm -rf data/training data/processed data_cleaning/data
+	rm -rf data/training data/processed data_cleaning/data bilstm-data/out bilstm-data/kaggle_stage

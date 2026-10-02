@@ -1,0 +1,69 @@
+{
+  "config": {
+    "data": "/kaggle/input/rain-or-pumps-bilstm-data",
+    "out": "/kaggle/working/run",
+    "channels": "all",
+    "epochs": 20,
+    "bs": 512,
+    "lr": 0.002,
+    "patience": 5,
+    "d_in": 32,
+    "hidden": 64,
+    "layers": 2,
+    "d_model": 64,
+    "dropout": 0.1,
+    "pool": "attn",
+    "weeks": 104,
+    "cv": true,
+    "no_baselines": true,
+    "no_ablations": false,
+    "limit": 0
+  },
+  "rows": 216455,
+  "channels": [
+    "rain_mm",
+    "in_interval",
+    "doy_sin",
+    "doy_cos",
+    "rain_anom_mm",
+    "wet_frac"
+  ],
+  "cv_folds": [
+    {
+      "mae": 1.4188779592514038,
+      "rmse": 2.322514295578003,
+      "r2": 0.4257541298866272,
+      "minutes": 3.9
+    },
+    {
+      "mae": 1.4503109455108643,
+      "rmse": 2.185298442840576,
+      "r2": 0.5262546539306641,
+      "minutes": 2.2
+    },
+    {
+      "mae": 1.4517810344696045,
+      "rmse": 2.2924129962921143,
+      "r2": 0.4973527193069458,
+      "minutes": 3.2
+    },
+    {
+      "mae": 1.3544691801071167,
+      "rmse": 2.080366373062134,
+      "r2": 0.4840153455734253,
+      "minutes": 3.1
+    },
+    {
+      "mae": 1.5271813869476318,
+      "rmse": 2.474675178527832,
+      "r2": 0.47069674730300903,
+      "minutes": 3.2
+    }
+  ],
+  "cv_mean": {
+    "mae": 1.4405241012573242,
+    "rmse": 2.2710534572601317,
+    "r2": 0.4808147192001343,
+    "minutes": 3.12
+  }
+}

@@ -39,3 +39,7 @@ env/
 # Rendered previews of the docs, not the docs themselves
 docs/*.pdf
 page-*.jpg
+
+# BiLSTM data copy: built by bilstm-data/build_bilstm_data.py, staged for Kaggle by kaggle/push.py
+bilstm-data/out/
+bilstm-data/kaggle_stage/
