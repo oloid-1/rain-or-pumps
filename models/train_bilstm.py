@@ -6,6 +6,7 @@ table as train_transformer.py, on the same rows and the same split.
     python models/train_bilstm.py --epochs 2 --no-baselines --limit 20000   smoke test
     python models/train_bilstm.py --channels rain_mm      the transformer's exact input
     python models/train_bilstm.py --cv                    5 district folds
+    python models/train_bilstm.py --data ../data/training the main build, rain only, same settings
 
 Runs, in order:
     baselines         zero, season mean, ridge, lightgbm (unchanged from the transformer script)
@@ -45,8 +46,12 @@ def load(data_dir):
     data_dir = Path(data_dir)
     tab = pd.read_parquet(data_dir / "tabular.parquet")
     spec = pd.read_csv(data_dir / "feature_spec.csv")
-    z = np.load(data_dir / "seq_channels.npz")
-    x, channels = z["x"], [str(c) for c in z["channels"]]
+    if (data_dir / "seq_channels.npz").exists():
+        z = np.load(data_dir / "seq_channels.npz")
+        x, channels = z["x"], [str(c) for c in z["channels"]]
+    else:
+        # the main build (data/training/): one rain channel, the transformer's input
+        x, channels = np.load(data_dir / "rain_seq.npz")["weeks"][:, :, None], ["rain_mm"]
     assert len(tab) == len(x), (len(tab), len(x))
 
     feats = spec.loc[spec.role == "feature", "column"].tolist()

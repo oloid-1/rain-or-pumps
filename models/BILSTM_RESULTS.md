@@ -24,6 +24,8 @@ Validation 2015-2017, every model on the same rows:
 | BiLSTM, 5 channels (no anomaly) + tabular | 1.538 | 2.469 | 0.415 |
 | BiLSTM, sequence only | 1.554 | 2.499 | 0.400 |
 | BiLSTM, sequence only, no anomaly | 1.578 | 2.513 | 0.394 |
+| BiLSTM on the main data (`data/training/`), rain only + tabular | 1.529 | 2.458 | 0.420 |
+| BiLSTM on the main data, sequence only | 1.618 | 2.582 | 0.360 |
 | *transformer + tabular (RESULTS.md)* | *1.531* | *2.461* | *0.418* |
 | *transformer, sequence only (RESULTS.md)* | *1.641* | *2.618* | *0.342* |
 
@@ -55,6 +57,25 @@ problem is the shift in time, not the shift in place. That is good news for a
 district-level attribution product. This is the first transformer
 district-fold run; `RESULTS.md` listed it as pending.
 
+## The same BiLSTM on the main data
+
+The same model and settings, trained on `data/training/` directly: the
+transformer's build, one rain channel, with no `bilstm-data` copy involved.
+
+| | valid MAE | valid R² | test R² | district CV R² |
+|---|---|---|---|---|
+| BiLSTM, main data, rain only | 1.529 | 0.420 | 0.440 | 0.483 |
+| BiLSTM, bilstm-data, rain only (`bilstm 1ch`) | 1.533 | 0.416 | — | — |
+| BiLSTM, bilstm-data, 6 channels | 1.521 | 0.419 | 0.441 | 0.481 |
+
+The rain-only model trained from the copy and the one trained from the main
+build agree to 0.004 m MAE. So the copy reproduces the main data, and the
+comparisons above hold for either source. The district folds (0.425 / 0.525 /
+0.508 / 0.487 / 0.470) match the 6-channel model's fold by fold.
+
+Main-data run in `models/artifacts/bilstm_main_results.json`,
+`bilstm_main_results_cv.json` and `bilstm_main.pt`.
+
 ## What to claim
 
 **On the full model: a three-way tie.** The BiLSTM, the transformer and
@@ -79,6 +100,7 @@ With no tabular features at all:
 | | R² |
 |---|---|
 | transformer, sequence only | 0.342 |
+| BiLSTM, sequence only, rain only (main data) | 0.360 |
 | BiLSTM, sequence only, 5 channels (no anomaly) | 0.394 |
 | BiLSTM, sequence only, 6 channels | 0.400 |
 | BiLSTM, full model | 0.419 |
@@ -91,9 +113,14 @@ The anomaly channel was the obvious suspect. It is computed from each well's
 normal, so it carries information about which well a row belongs to, which is
 the same issue flagged for LightGBM's top features in `RESULTS.md`. Removing
 that channel costs only 0.006 R². So the anomaly is not what drives the
-sequence-only result. The likeliest cause is that the BiLSTM keeps weekly
-resolution and also gets the `in_interval` and calendar channels. The
-transformer works on 4-week patches and has neither channel.
+sequence-only result.
+
+The main-data run splits the remaining gain. On the same single rain channel,
+the BiLSTM reaches 0.360 against the transformer's 0.342: weekly steps and
+recurrence account for about +0.02. The `in_interval`, calendar and wet-day
+channels take it to 0.394: about +0.035. **Most of the gap is the data, not the
+architecture.** That is the honest reading. It also says the transformer should
+be tried on the same channels before the comparison is closed.
 
 This matters for the project. The more of the explained variance comes from the
 rain sequence rather than from static well properties, the more the residual
@@ -108,6 +135,7 @@ shows the mean change in the predicted fall:
 |---|---|---|---|
 | BiLSTM, 6 channels | +0.012 m | −0.009 m | yes |
 | BiLSTM, no anomaly channel | **−0.023 m** | **+0.018 m** | **no** |
+| BiLSTM, main data, rain only | **−0.007 m** | **+0.006 m** | **no** |
 
 The 6-channel model moves the right way: less rain, larger fall. The effect is
 small, though, about 1 cm for a 20% change in two years of rain. Drop the
