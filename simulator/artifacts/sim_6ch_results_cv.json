@@ -1,0 +1,67 @@
+{
+  "config": {
+    "data": "/kaggle/input/<dataset>",
+    "out": "/kaggle/working/<run>",
+    "epochs": 20,
+    "bs": 512,
+    "lr": 0.002,
+    "patience": 5,
+    "mono_weight": 1.0,
+    "cv": true,
+    "limit": 0,
+    "no_export": false
+  },
+  "rows": 216455,
+  "channels": [
+    "rain_mm",
+    "in_interval",
+    "doy_sin",
+    "doy_cos",
+    "rain_anom_mm",
+    "wet_frac"
+  ],
+  "static": [
+    "well_depth_m",
+    "sy",
+    "days_since_prev",
+    "rain_normal_annual_mm",
+    "rain_normal_season_mm",
+    "rain_normal_monsoon_mm",
+    "season",
+    "aquifer",
+    "well_type",
+    "transition"
+  ],
+  "cv_folds": [
+    {
+      "mae": 1.4159624576568604,
+      "rmse": 2.3068315982818604,
+      "r2": 0.4334831237792969
+    },
+    {
+      "mae": 1.4498029947280884,
+      "rmse": 2.177870035171509,
+      "r2": 0.529469907283783
+    },
+    {
+      "mae": 1.4472709894180298,
+      "rmse": 2.2794792652130127,
+      "r2": 0.5030084848403931
+    },
+    {
+      "mae": 1.3461648225784302,
+      "rmse": 2.0568904876708984,
+      "r2": 0.49559491872787476
+    },
+    {
+      "mae": 1.5231611728668213,
+      "rmse": 2.4577808380126953,
+      "r2": 0.47789907455444336
+    }
+  ],
+  "cv_mean": {
+    "mae": 1.436472487449646,
+    "rmse": 2.255770444869995,
+    "r2": 0.4878911018371582
+  }
+}

@@ -5,7 +5,7 @@
 #   make all      the three above, in order
 PY ?= python3
 
-.PHONY: all data cube train cv report bilstm-data bilstm test fetch clean-built
+.PHONY: all data cube train cv report bilstm-data bilstm geo sim ui-data ui test fetch clean-built
 
 all: data train report
 
@@ -37,6 +37,22 @@ bilstm-data:
 bilstm:
 	cd models && $(PY) train_bilstm.py --epochs 25
 
+## simulator: map layers (needs data/geo/raw/, see simulator/README.md)
+geo:
+	$(PY) simulator/geo/build_geo.py
+
+## simulator: train locally (the reported run is on Kaggle: python kaggle/push.py --script run_sim.py)
+sim:
+	$(PY) simulator/train_sim.py --data bilstm-data/out --out simulator/out/sim_6ch
+
+## simulator: everything the UI reads, from a trained run
+ui-data:
+	$(PY) simulator/ui/build_ui_data.py --run simulator/artifacts
+
+## simulator: serve the UI at http://localhost:8765
+ui:
+	$(PY) -m http.server 8765 -d simulator/ui
+
 ## the pipeline's own test suite
 test:
 	cd pipeline && pytest -q
@@ -47,4 +63,4 @@ fetch:
 
 ## remove everything that can be rebuilt
 clean-built:
-	rm -rf data/training data/processed data_cleaning/data bilstm-data/out bilstm-data/kaggle_stage
+	rm -rf data/training data/processed data_cleaning/data bilstm-data/out bilstm-data/kaggle_stage simulator/out

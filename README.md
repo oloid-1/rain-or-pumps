@@ -65,6 +65,7 @@ the rain history is carrying the model, which is what the attribution needs.
 | `models/` | Model code: the direct training-table builder, the transformer, training and reporting |
 | `bilstm-data/` | The BiLSTM copy of the training data: same rows, a 6-channel weekly sequence. See `bilstm-data/README.md` |
 | `kaggle/` | Pushes the BiLSTM data and code to Kaggle and runs training on a GPU |
+| `simulator/` | New: a rain-scenario simulator (BiLSTM with a rain-response penalty) and the map UI that runs it in the browser. See `simulator/README.md` |
 | `notebooks/` | Exploration and the gap-closing notebook |
 | `docs/` | Problem statement, execution plan, methodology notes, the end-to-end review |
 | `decks/` | Review presentations |
@@ -83,6 +84,7 @@ the rain history is carrying the model, which is what the attribution needs.
 | The model contract and the commands | `models/START_HERE.md` |
 | The measured results | `models/RESULTS.md` |
 | The BiLSTM and the transformer side by side | `models/BILSTM_RESULTS.md` |
+| The simulator and its UI | `simulator/README.md` |
 
 ## The data
 

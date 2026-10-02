@@ -5,6 +5,7 @@ pushes kaggle/run_bilstm.py as a private GPU kernel against it.
     python kaggle/push.py                 dataset (create or new version) + kernel
     python kaggle/push.py --kernel-only   code unchanged on the dataset side
     python kaggle/push.py --kernel-only --script run_followup.py   a second kernel, same dataset
+    python kaggle/push.py --main-data --script run_sim.py   + data/training/ as a dataset, simulator kernel
     python kaggle/push.py --fetch         download the kernel's output to bilstm-data/out/kaggle_run/
 
 Needs the kaggle CLI logged in (~/.kaggle). Build the data first:
@@ -21,8 +22,13 @@ REPO = Path(__file__).resolve().parents[1]
 OUT = REPO / "bilstm-data" / "out"
 STAGE = REPO / "bilstm-data" / "kaggle_stage"
 DATA_FILES = ["tabular.parquet", "feature_spec.csv", "seq_channels.npz", "build_report.txt"]
-CODE_FILES = ["transformer.py", "train_transformer.py", "bilstm.py", "train_bilstm.py"]
+CODE_FILES = ["models/transformer.py", "models/train_transformer.py", "models/bilstm.py",
+              "models/train_bilstm.py", "simulator/train_sim.py"]
 DATASET = "rain-or-pumps-bilstm-data"
+# the main build, data/training/, as its own dataset so runs can name it explicitly
+MAIN_DIR = REPO / "data" / "training"
+MAIN_FILES = ["tabular.parquet", "feature_spec.csv", "rain_seq.npz", "build_report.txt"]
+MAIN_DATASET = "rain-or-pumps-main-data"
 KERNEL = "rain-or-pumps-bilstm"
 
 
@@ -43,13 +49,26 @@ def push_dataset(owner):
     for f in DATA_FILES:
         shutil.copy2(OUT / f, d / f)
     for f in CODE_FILES:
-        shutil.copy2(REPO / "models" / f, d / f)
+        shutil.copy2(REPO / f, d / Path(f).name)
+    upload(d, owner, DATASET, "rain-or-pumps bilstm data")
+
+
+def push_main_dataset(owner):
+    d = STAGE / "main_dataset"
+    shutil.rmtree(d, ignore_errors=True)
+    d.mkdir(parents=True)
+    for f in MAIN_FILES:
+        shutil.copy2(MAIN_DIR / f, d / f)
+    upload(d, owner, MAIN_DATASET, "rain-or-pumps main data")
+
+
+def upload(d, owner, slug, title):
     (d / "dataset-metadata.json").write_text(json.dumps({
-        "title": "rain-or-pumps bilstm data",
-        "id": f"{owner}/{DATASET}",
+        "title": title,
+        "id": f"{owner}/{slug}",
         "licenses": [{"name": "CC-BY-4.0"}],
     }, indent=2))
-    exists = DATASET in kaggle("datasets", "list", "--mine", "-s", DATASET)
+    exists = slug in kaggle("datasets", "list", "--mine", "-s", slug)
     if exists:
         print(kaggle("datasets", "version", "-p", str(d), "-m", "rebuild", "-r", "skip"))
     else:
@@ -77,7 +96,7 @@ def push_kernel(owner, script):
         "enable_gpu": True,
         "machine_shape": "NvidiaTeslaT4",
         "enable_internet": False,
-        "dataset_sources": [f"{owner}/{DATASET}"],
+        "dataset_sources": [f"{owner}/{DATASET}", f"{owner}/{MAIN_DATASET}"],
         "competition_sources": [],
         "kernel_sources": [],
     }, indent=2))
@@ -98,12 +117,15 @@ def main():
     ap.add_argument("--kernel-only", action="store_true")
     ap.add_argument("--fetch", action="store_true")
     ap.add_argument("--script", default="run_bilstm.py", help="kernel entry point in kaggle/")
+    ap.add_argument("--main-data", action="store_true", help="also upload data/training/ as its own dataset")
     a = ap.parse_args()
     owner = user()
     if a.fetch:
         return fetch(owner, a.script)
     if not a.kernel_only:
         push_dataset(owner)
+        if a.main_data:
+            push_main_dataset(owner)
     push_kernel(owner, a.script)
 
 
