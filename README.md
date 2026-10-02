@@ -55,6 +55,29 @@ rainfall series recovers gradient boosting on hand-engineered rain windows, with
 being told which windows matter. The sequence-only ablation reaching R² 0.342 says
 the rain history is carrying the model, which is what the attribution needs.
 
+## Two BiLSTM models, two purposes
+
+The `bilstm` branch adds two models built on the same BiLSTM architecture. They
+differ in what they are for, not in the data: each was trained on both the
+6-channel `bilstm-data` copy and the main `data/training` build.
+
+| | **BiLSTM** (comparison model) | **Simulator** (runs in the UI) |
+|---|---|---|
+| Purpose | fit `delta_h_m` as well as possible, for the comparison with the transformer and LightGBM | answer "what if the rain had been different?" |
+| Rain input | the 104-week sequence, plus 23 rain-derived tabular features (windows, lags, anomalies) | the 104-week sequence only, so a scenario just rescales it |
+| Other inputs | static well facts | the same static well facts |
+| Training | Huber loss | Huber loss plus a rain-response penalty: more rain may not predict a larger fall |
+| On `bilstm-data` (6 channels) | valid R² 0.419, test 0.441, district CV 0.481 | valid R² 0.426, test 0.453, district CV 0.488 (**the model in the UI**) |
+| On main data (rain only) | valid R² 0.420, test 0.440, district CV 0.483 | valid R² 0.419, test 0.446 |
+| Response to +20% rain | −0.9 cm; the sign flips in some variants | −11 cm, the right direction for 98% of wells |
+| Code | `models/bilstm.py`, `models/train_bilstm.py` | `simulator/train_sim.py` |
+| Write-up | [models/BILSTM_RESULTS.md](models/BILSTM_RESULTS.md) | [simulator/README.md](simulator/README.md) |
+
+Present the BiLSTM for the architecture comparison: it ties the transformer and
+LightGBM. Present the simulator as the new contribution: a model whose rain
+response is usable for scenarios, at no cost in fit, with the map UI in
+`simulator/ui/` that runs it in the browser.
+
 ## Repository layout
 
 | Folder | What is in it |
