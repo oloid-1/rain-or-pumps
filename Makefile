@@ -5,7 +5,7 @@
 #   make all      the three above, in order
 PY ?= python3
 
-.PHONY: all data cube train cv report bilstm-data bilstm geo sim ui-data ui test fetch clean-built
+.PHONY: all data cube train cv report bilstm-data bilstm geo sim ui-data ui api test-api test fetch clean-built
 
 all: data train report
 
@@ -52,6 +52,14 @@ ui-data:
 ## simulator: serve the UI at http://localhost:8765
 ui:
 	$(PY) -m http.server 8765 -d simulator/ui
+
+## simulator: the FastAPI service, with the UI at http://localhost:8000 and docs at /docs
+api:
+	$(PY) -m uvicorn app:app --app-dir simulator/api --port 8000
+
+## simulator: the API's tests
+test-api:
+	$(PY) -m pytest simulator/api -q
 
 ## the pipeline's own test suite
 test:

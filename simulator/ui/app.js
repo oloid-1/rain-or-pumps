@@ -312,6 +312,17 @@ function paintWells(valueOf, ringOf) {
 }
 
 // ---------------------------------------------------------------- scenario
+// When the page is served by the FastAPI service (simulator/api), scenarios run there:
+// same model file, identical numbers, and far faster than WebAssembly in the page.
+async function predictApi(pct, region) {
+  const r = await fetch("api/scenario", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ year: S.scen.y, rain_pct: pct, state: region || null, details: true }) });
+  if (!r.ok) throw new Error(`API ${r.status}: ${await r.text()}`);
+  const out = S.scen.base.slice();
+  for (const w of (await r.json()).wells) out[w.row] = w.predicted_change_m;
+  return out;
+}
+
 // The model runs in model-worker.js, off the main thread.
 let worker = null, workerReady = null, jobId = 0;
 const jobs = new Map();
@@ -398,10 +409,9 @@ async function runScenario() {
   if (f !== 1) {
     $("#sc-diff").textContent = "computing…"; $("#sc-arrow").className = "arrow";
     $("#sc-diff-sub").textContent = `running the model on every well with ${pct > 0 ? "+" : "−"}${Math.abs(pct)}% rain`;
-    loading(true, "Running the model");
-    await initModel(); await scenarioInputs();
-    if (id !== scenRun) return;
-    pred = await predict(f, rows);
+    loading(true, S.api ? "Running the model on the API" : "Running the model");
+    if (S.api) pred = await predictApi(pct, region);
+    else { await initModel(); await scenarioInputs(); if (id !== scenRun) return; pred = await predict(f, rows); }
     loading(false);
   }
   if (id !== scenRun) return;
@@ -639,6 +649,9 @@ map.on("load", async () => {
     $("#sc-year").innerHTML = Object.keys(scenIndex.years).map((y) => `<option value="${y}">November ${y}</option>`).join("");
     $("#sc-year").value = Object.keys(scenIndex.years).at(-1);
     $("#sc-region").innerHTML += [...new Set(wells.map((w) => w.state))].sort().map((s) => `<option>${s}</option>`).join("");
+    // is the API behind this page? (python -m http.server has no /api; uvicorn does)
+    S.api = await fetch("api/health").then((r) => r.ok && r.headers.get("content-type")?.includes("json")).catch(() => false);
+    $("#sc-engine").textContent = S.api ? "Model runs on the FastAPI service." : "Model runs in your browser.";
     const rv = meta.response_valid || {};
     if (rv["x1.2"]) $("#sc-note").textContent =
       `On held-out readings, +20% rain moves the mean prediction by ${fmtM(rv["x1.2"].mean, 3)}, and ${(100 * rv["x1.2"].wrong_way).toFixed(1)}% of readings still move the wrong way. Read differences under a few centimetres as noise.`;
@@ -652,7 +665,7 @@ map.on("load", async () => {
     loading(false);
     setMode(["replay", "scenario", "pressure"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "replay");
     const idle = window.requestIdleCallback || ((f) => setTimeout(f, 1500));
-    idle(() => warmScenario().catch(() => {}), { timeout: 4000 });
+    if (!S.api) idle(() => warmScenario().catch(() => {}), { timeout: 4000 });
   } catch (e) {
     console.error(e);
     loading(true, `Could not load data: ${e.message}. Run build_ui_data.py and serve this folder over http.`);

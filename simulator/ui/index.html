@@ -156,7 +156,7 @@ Pressure
         <div class="kpi"><span class="k">Wells falling &darr; rising &uarr;</span><span class="v mono" id="sc-split">&ndash;</span></div>
         <div class="kpi warn wide"><span class="k">Water table within 2 m of the surface (CGWB waterlogged band), change against recorded rain</span><span class="v mono" id="sc-wl">&ndash;</span></div>
       </div>
-      <p class="note" id="sc-note"></p>
+      <p class="note"><span id="sc-note"></span> <span id="sc-engine"></span></p>
     </section>
 
     <!-- ===== PRESSURE ===== -->
@@ -168,14 +168,14 @@ Pressure
       <div class="field">
         <div class="field-head"><span>Years</span><output id="pr-out" class="mono pill">2015&ndash;2022</output></div>
         <div class="dual">
-          <input type="range" id="pr-from" min="2000" max="2022" value="2015" aria-label="From year">
-          <input type="range" id="pr-to" min="2000" max="2022" value="2022" aria-label="To year">
+          <input type="range" id="pr-from" min="2015" max="2022" value="2015" aria-label="From year">
+          <input type="range" id="pr-to" min="2015" max="2022" value="2022" aria-label="To year">
         </div>
       </div>
 
       <p class="card-title">Highest unexplained fall</p>
       <ol class="rank" id="pr-rank"></ol>
-      <p class="note">A ranking, not a measurement of pumping. A district needs at least two monitored wells in a year to count.</p>
+      <p class="note">A ranking, not a measurement of pumping. Held-out years only (2015&ndash;2022): the model was fitted on 2000&ndash;2014, so residuals there are biased towards zero. A district needs at least two monitored wells in a year to count.</p>
     </section>
 
     <!-- ===== SELECTION ===== -->

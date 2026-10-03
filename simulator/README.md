@@ -8,10 +8,12 @@ comparison: `models/` and `models/BILSTM_RESULTS.md` are unchanged by it.
 python bilstm-data/build_bilstm_data.py        # the 6-channel data (~25 s)
 python simulator/geo/build_geo.py              # map layers (needs data/geo/raw/, below)
 python simulator/ui/build_ui_data.py           # everything the UI reads (~2 min)
-python -m http.server 8765 -d simulator/ui     # then open http://localhost:8765
+uvicorn app:app --app-dir simulator/api --port 8000   # UI at http://localhost:8000, API docs at /docs
 ```
 
-Or with make: `make bilstm-data geo ui-data ui`.
+Or with make: `make bilstm-data geo ui-data api`. The UI also works without the
+API, as a plain static page (`make ui`, port 8765); the model then runs in the
+browser.
 
 ## Why a separate model
 
@@ -130,6 +132,66 @@ flow, reservoir storage or dam releases, so the UI shows dams as context only. T
 "water table within 2 m of the surface" flag is the model-backed version of
 "water comes out": CGWB's own waterlogged category.
 
+## The API (`simulator/api/`)
+
+A FastAPI service: it serves the UI and the model behind it. This is the week 7
+deliverable (an API endpoint for the model), rebuilt for the current target and
+models; the archived `archive/ml/bits_ml/api.py` used the old target with the
+opposite sign.
+
+```bash
+make api            # uvicorn on http://localhost:8000; interactive docs at /docs
+make test-api       # 15 tests
+```
+
+| endpoint | what it returns |
+|---|---|
+| `GET /api/health` | model, channels, validation metrics, rain response, scenario years |
+| `GET /api/wells?state=&district=` | every monitored well: position, district, type, aquifer, depth, specific yield |
+| `GET /api/wells/{id}` | one well with its level history; each reading has observed and rain-expected change, and a held-out flag |
+| `POST /api/scenario` | body `{year, rain_pct, state, details}`. Per-well predicted change for a November reading (2015–2022) under scaled rain. Summary: mean change, level against recorded rain, falling/rising, waterlogged wells |
+| `GET /api/pressure?from_year=&to_year=&top=` | districts ranked by observed minus rain-expected change |
+| `GET /api/districts/{name}?state=` | one district's yearly observed, expected and unexplained change |
+| `GET /api/rain/{date}?cells=` | IMD rain for one day: mean, maximum, heavy cells; optionally every wet cell |
+| `/` | the UI |
+
+Example:
+
+```bash
+curl -s -X POST localhost:8000/api/scenario -H "Content-Type: application/json"      -d '{"year": 2022, "rain_pct": -40, "details": false}'
+# summary.level_vs_recorded_rain_m = -0.258: the water level 25.8 cm lower than with the rain that fell
+```
+
+Design:
+- **The same model file as the browser.** The API runs `simulator/ui/data/sim.onnx`
+  with onnxruntime, and repeats the browser's rain scaling in numpy. The two give
+  identical numbers: severe drought −25.8 cm, strong monsoon +9.8 cm, the same
+  waterlogging counts. A test also checks the API against the predictions
+  computed in torch when the data was built.
+- **Speed.** A full-India scenario takes about 0.6 s on the API, against seconds
+  for WebAssembly in the page.
+- **Scenario source.** When the UI is served by the API it sends scenarios there
+  ("Model runs on the FastAPI service" under the scenario). Served as plain files,
+  it falls back to the in-browser worker.
+- **Validation.** Requests are checked by Pydantic and give 422 with a reason:
+  - `rain_pct` from −50 to +50;
+  - `year` from 2015 to 2022;
+  - `state` one of the states with monitored wells.
+- **Pressure uses held-out years by default (2015–2022).** The model was fitted on
+  2000–2014, so residuals there are biased towards zero (`models/MODEL_REVIEW.md`,
+  section 3). Earlier years need `include_training_years=true`, and the response
+  is flagged `in_sample: true`. The UI's Pressure slider is limited to 2015–2022
+  for the same reason.
+
+Tests (`simulator/api/test_api.py`):
+- ONNX against the torch predictions;
+- recorded rain is the baseline;
+- more rain raises the water level and the waterlogging count;
+- the state filter;
+- rejected inputs;
+- the Pressure year rule;
+- wells, districts, rain and the UI route.
+
 ## Map data (`simulator/geo/build_geo.py`)
 
 | layer | source | licence | in the UI |
@@ -174,5 +236,6 @@ unpenalised one on the T4. Most of the 3.5 hours is the 5-fold run.
 | `geo/build_geo.py` | districts, India outline, rivers and dams, clipped and thinned |
 | `ui/build_ui_data.py` | rain files, wells, campaigns, scenario inputs, base predictions, pressure table |
 | `ui/index.html`, `ui/style.css`, `ui/app.js`, `ui/model-worker.js` | the page |
+| `api/app.py`, `api/test_api.py` | the FastAPI service and its tests |
 | `artifacts/` | the reported 6-channel simulator (`sim.pt`, `sim.onnx`, `sim_meta.json`) and every run's results |
 | `../kaggle/run_sim.py` | the Kaggle kernel for all of the above |
