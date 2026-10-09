@@ -99,3 +99,42 @@ def test_rain():
 def test_ui_is_served():
     r = client.get("/")
     assert r.status_code == 200 and "Rain or Pumps" in r.text
+
+
+# ---------------------------------------------------------------- forecast and simulate
+# these also need python simulator/forecast/build_forecast.py
+
+def test_forecast_bands_are_ordered_and_start_at_the_last_reading():
+    r = client.get("/api/forecast", params={"state": "Punjab", "to_year": 2030}).json()
+    f = r["forecast"]
+    assert f[0]["date"] == "2023-01-15" and f[-1]["date"] == "2030-11-15"
+    for k in ("rain_only", "rain_plus_trend"):
+        assert all(x[k]["p10"] <= x[k]["p50"] <= x[k]["p90"] for x in f)
+    assert any(x["beyond_tested_skill"] for x in f) and not f[0]["beyond_tested_skill"]
+
+
+def test_forecast_less_rain_means_deeper_water():
+    dry = client.get("/api/forecast", params={"to_year": 2026, "rain_pct": -20}).json()["summary"]
+    wet = client.get("/api/forecast", params={"to_year": 2026, "rain_pct": 20}).json()["summary"]
+    assert dry["rain_only_change_m"] > wet["rain_only_change_m"]
+
+
+def test_simulate_past_monsoon_plus_15_percent_raises_the_water():
+    r = client.post("/api/simulate", json={"state": "Kerala", "start": "2019-06-01", "end": "2019-09-30",
+                                           "rain_pct": 15}).json()
+    assert r["past"] and r["members"] == 1
+    assert r["peak"]["depth_effect_m"]["p50"] < 0         # negative: water table higher
+
+
+def test_simulate_rain_today_in_bengaluru_is_a_future_ensemble():
+    r = client.post("/api/simulate", json={"district": "Bengaluru", "start": "2026-10-09", "add_mm": 40}).json()
+    assert "Bengaluru Urban" in r["place"] and not r["past"] and r["members"] > 1
+    assert r["readings"][0]["date"] == "2026-11-15"
+    assert r["peak"]["depth_effect_m"]["p50"] <= 0
+    assert r["rain_context"]["added_mm"] == 40 and r["rain_context"]["season"] == "post-monsoon"
+
+
+@pytest.mark.parametrize("body", [{"start": "2019-01-01"}, {"start": "2019-01-01", "end": "2018-01-01", "rain_pct": 10},
+                                  {"start": "2019-01-01", "rain_pct": 10, "district": "Atlantis"}])
+def test_bad_simulations_are_rejected(body):
+    assert client.post("/api/simulate", json=body).status_code in (404, 422)

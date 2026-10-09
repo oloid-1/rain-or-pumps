@@ -17,6 +17,10 @@ Endpoints, all under /api:
     GET  /pressure                  district ranking: observed minus rain-expected
     GET  /districts/{name}          one district's yearly observed and expected change
     GET  /rain/{date}               the IMD rainfall grid for one day
+    GET  /forecast                  depth to water from 2022 to a chosen year, rain only and
+                                    rain + 2015-22 trend, from the precomputed table
+    POST /simulate                  change the rain on any past or future days and re-run the
+                                    model on the readings it reaches
 
 Pressure is ranked on held-out years only (2015-2022) unless training years are
 asked for explicitly. Residuals on training years were fitted by the model, so
@@ -27,6 +31,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -37,6 +42,9 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "forecast"))
+from engine import SEASONS, W as WEEKS, Edit, Engine, reading_date, steps_between  # noqa: E402
 
 UI = Path(__file__).resolve().parents[1] / "ui"
 DATA = UI / "data"
@@ -280,6 +288,228 @@ def rain(date: dt.date, cells: bool = Query(False, description="include every we
         wet = np.flatnonzero(mm >= 0.6)
         out["cells"] = [[float(lat[g["lat_idx"][c]]), float(lon[g["lon_idx"][c]]), round(float(mm[c]), 1)] for c in wet]
     return out
+
+
+# ---------------------------------------------------------------- places
+class Place(BaseModel):
+    """One of: well, district (+ state if the name repeats), state, or lat/lon with
+    a radius. Nothing means all India."""
+    well: Optional[str] = Field(None, description="well id (lat_lon) or index")
+    district: Optional[str] = None
+    state: Optional[str] = None
+    lat: Optional[float] = Field(None, ge=5, le=38)
+    lon: Optional[float] = Field(None, ge=66, le=99)
+    radius_km: float = Field(50, gt=0, le=300)
+
+
+def select_wells(p: Place) -> tuple[np.ndarray, str]:
+    s = store()
+    if p.well is not None:
+        i = s.well_ix.get(p.well)
+        if i is None and p.well.isdigit() and int(p.well) < len(s.wells):
+            i = int(p.well)
+        if i is None:
+            raise HTTPException(404, f"no well {p.well!r}")
+        w = s.wells[i]
+        return np.asarray([i]), f"well {w['id']}, {w['district']}"
+    if p.lat is not None and p.lon is not None:
+        lat = np.radians([w["lat"] for w in s.wells]); lon = np.radians([w["lon"] for w in s.wells])
+        la, lo = np.radians(p.lat), np.radians(p.lon)
+        km = 12742 * np.arcsin(np.sqrt(np.sin((lat - la) / 2) ** 2 + np.cos(lat) * np.cos(la) * np.sin((lon - lo) / 2) ** 2))
+        idx = np.flatnonzero(km <= p.radius_km)
+        if not len(idx):
+            raise HTTPException(404, f"no monitored well within {p.radius_km:g} km of {p.lat:.3f}, {p.lon:.3f}")
+        return idx, f"{len(idx)} wells within {p.radius_km:g} km of {p.lat:.2f}°N {p.lon:.2f}°E"
+    in_state = lambda w: p.state is None or w["state"].lower() == p.state.lower()
+    if p.district is not None:
+        want = p.district.strip().lower()
+        idx = [i for i, w in enumerate(s.wells) if w["district"].lower() == want and in_state(w)]
+        if not idx:          # "Bengaluru" -> Bengaluru Urban and Bengaluru Rural
+            idx = [i for i, w in enumerate(s.wells) if w["district"].lower().startswith(want) and in_state(w)]
+        if not idx:
+            raise HTTPException(404, f"no monitored wells in a district called {p.district!r}")
+        return np.asarray(idx), " + ".join(sorted({f"{s.wells[i]['district']}, {s.wells[i]['state']}" for i in idx}))
+    if p.state is not None:
+        idx = [i for i, w in enumerate(s.wells) if in_state(w)]
+        if not idx:
+            raise HTTPException(422, f"unknown state {p.state!r}; one of {s.states}")
+        return np.asarray(idx), s.wells[idx[0]]["state"]
+    return np.arange(len(s.wells)), "All India"
+
+
+# ---------------------------------------------------------------- forecast
+SKILL_YEARS = 5          # backtest: beats "no change" up to 5 years ahead, not beyond
+HISTORY_FROM = 2012
+
+
+class Forecast:
+    """The per-step table written by simulator/forecast/build_forecast.py."""
+
+    def __init__(self):
+        d = DATA / "forecast"
+        if not (d / "index.json").exists():
+            raise RuntimeError(f"missing {d}; run python simulator/forecast/build_forecast.py")
+        self.idx = json.loads((d / "index.json").read_text())
+        nw, self.ny = len(self.idx["start"]), len(self.idx["years"])
+        self.shifts = self.idx["shifts"]
+        self.deltas = (np.frombuffer((d / "deltas.bin").read_bytes(), np.float16)
+                       .reshape(len(self.shifts), nw, self.ny, 4).astype(np.float32))
+        self.trend = np.frombuffer((d / "trend.bin").read_bytes(), np.float32).reshape(nw, 4)
+        self.start = np.asarray(self.idx["start"])             # (wells, 2): last campaign, depth
+        self.y0 = self.idx["years"][0]
+
+    def table(self, pct: float) -> np.ndarray:
+        """(wells, years, 4) predicted change at rain shift pct, linear between grid points."""
+        sh = self.shifts
+        pct = min(max(pct, sh[0]), sh[-1])
+        j = min(int(np.searchsorted(sh, pct, side="right")) - 1, len(sh) - 2)
+        t = (pct - sh[j]) / (sh[j + 1] - sh[j])
+        return self.deltas[j] * (1 - t) + self.deltas[j + 1] * t
+
+
+FC: Forecast | None = None
+
+
+def forecast_store() -> Forecast:
+    global FC
+    if FC is None:
+        FC = Forecast()
+    return FC
+
+
+def forecast_paths(wells: np.ndarray, to_year: int, pct: float):
+    """Depth paths (members, steps, wells), rain only and rain + trend, from each
+    well's last reading. Member m rains future year 2023 + k like year 2000 + (m + k) mod 23."""
+    s, fc = store(), forecast_store()
+    tab = fc.table(pct)[wells]                                # (w, years, 4)
+    trend = fc.trend[wells]                                   # (w, 4)
+    depth0 = fc.start[wells, 1].astype(np.float32)
+    # wells last read before Nov 2022 first catch up to Nov on the real 2022 rain
+    catch = np.zeros(len(wells), np.float32)
+    catch_trend = np.zeros(len(wells), np.float32)
+    for k, c in enumerate(fc.start[wells, 0].astype(int)):
+        cm = s.campaigns[c]
+        for si in range(SEASONS.index(cm["season"]) + 1 if cm["year"] == 2022 else 0, 4):
+            catch[k] += tab[k, 2022 - fc.y0, si]
+            catch_trend[k] += trend[k, si]
+    steps = [(y, si) for y in range(2023, to_year + 1) for si in range(4)]
+    rain = np.stack([np.cumsum(np.stack([tab[:, (m + y - 2023) % fc.ny, si] for y, si in steps]), axis=0)
+                     for m in range(fc.ny)])
+    trend_cum = np.cumsum(np.stack([trend[:, si] for _, si in steps]), axis=0)
+    base = depth0 + catch
+    return base + rain, base + catch_trend + rain + trend_cum, [reading_date(y, si).isoformat() for y, si in steps]
+
+
+def _bands(paths: np.ndarray):
+    """Mean over wells for each member, then 10/50/90th percentile over members."""
+    q = np.percentile(paths.mean(axis=2), [10, 50, 90], axis=0)
+    return [{"p10": round(float(a), 3), "p50": round(float(b), 3), "p90": round(float(c), 3)} for a, b, c in q.T]
+
+
+@app.get("/api/forecast", tags=["forecast"])
+def forecast(to_year: int = Query(2030, ge=2023, le=2045),
+             rain_pct: float = Query(0, ge=-30, le=30, description="shift applied to every replayed year's rain"),
+             well: Optional[str] = None, district: Optional[str] = None, state: Optional[str] = None,
+             lat: Optional[float] = None, lon: Optional[float] = None, radius_km: float = 50):
+    """Depth to water (m below ground, larger = deeper) from the 2022 reading to
+    `to_year`: median and 10-90% over 23 replayed rain histories. `rain_plus_trend`
+    adds each district's 2015-22 unexplained change per step, i.e. assumes pumping and
+    everything else rain does not explain carries on."""
+    s, fc = store(), forecast_store()
+    wells, label = select_wells(Place(well=well, district=district, state=state, lat=lat, lon=lon, radius_km=radius_km))
+    d_rain, d_trend, dates = forecast_paths(wells, to_year, rain_pct)
+    hist = {}
+    for i in wells:
+        for c, depth, *_ in s.wells[i]["h"]:
+            if s.campaigns[c]["year"] >= HISTORY_FROM:
+                hist.setdefault(c, []).append(depth)
+    # campaigns that read only a few of the wells make the mean jump; skip them
+    full = max((len(v) for v in hist.values()), default=0)
+    history = [{"date": s.campaigns[c]["date"], "depth_m": round(float(np.mean(v)), 3), "wells": len(v)}
+               for c, v in sorted(hist.items()) if len(v) >= 0.5 * full]
+    d0 = fc.start[wells, 1]
+    rows = [{"date": d, "rain_only": r, "rain_plus_trend": t, "beyond_tested_skill": (k + 1) / 4 > SKILL_YEARS}
+            for k, (d, r, t) in enumerate(zip(dates, _bands(d_rain), _bands(d_trend)))]
+    return {
+        "place": label, "wells": int(len(wells)), "to_year": to_year, "rain_pct": rain_pct,
+        "start": {"date": "2022-11-15", "depth_m": round(float(d0.mean()), 3)},
+        "history": history, "forecast": rows,
+        "summary": {"rain_only_change_m": round(float(np.median(d_rain[:, -1].mean(1)) - d0.mean()), 3),
+                    "rain_plus_trend_change_m": round(float(np.median(d_trend[:, -1].mean(1)) - d0.mean()), 3)},
+        "per_well": [{"index": int(i), "change_m": round(float(v), 3)}
+                     for i, v in zip(wells, np.median(d_rain[:, -1], axis=0) - d0)],
+        "backtest": fc.idx["backtest"],
+    }
+
+
+# ---------------------------------------------------------------- simulate
+ENGINE: Engine | None = None
+ROW_BUDGET = 30000       # model rows per request; about 40 s on a laptop CPU
+
+
+def get_engine() -> Engine:
+    global ENGINE
+    if ENGINE is None:
+        ENGINE = Engine(store().session, store().meta)
+    return ENGINE
+
+
+def _season(d: dt.date) -> str:
+    m = d.month
+    return "south-west monsoon" if 6 <= m <= 9 else "post-monsoon" if m >= 10 else "winter" if m <= 2 else "pre-monsoon"
+
+
+class SimulateIn(Place):
+    start: dt.date
+    end: Optional[dt.date] = Field(None, description="default: the start day")
+    rain_pct: float = Field(0, ge=-100, le=500, description="change to the rain on those days, %")
+    add_mm: float = Field(0, ge=0, le=500, description="extra rain on each of those days, mm")
+
+
+@app.post("/api/simulate", tags=["forecast"])
+def simulate(req: SimulateIn):
+    """Change the rain on a day or range of days, past or future, and re-run the
+    model on every reading that rain reaches (up to 104 weeks later). Past dates use
+    the recorded rain around the edit; future dates use replayed rain and return a
+    median and 10-90% range. Example: {"district": "Bengaluru", "start": "2026-10-09", "add_mm": 40}."""
+    end = req.end or req.start
+    if end < req.start:
+        raise HTTPException(422, "end is before start")
+    if req.start < dt.date(2000, 1, 1) or end > dt.date(2045, 12, 31):
+        raise HTTPException(422, "dates must fall between 2000-01-01 and 2045-12-31")
+    if (end - req.start).days > 730:
+        raise HTTPException(422, "change at most two years of rain at once")
+    if req.rain_pct == 0 and req.add_mm == 0:
+        raise HTTPException(422, "set rain_pct or add_mm")
+    wells, label = select_wells(req)
+    steps = steps_between(req.start - dt.timedelta(days=1), end + dt.timedelta(days=WEEKS * 7))
+    future = any(y > 2022 for y, _ in steps)
+    rows = 2 * len(wells) * len(steps)                  # with and without the edit
+    if rows > ROW_BUDGET:
+        raise HTTPException(422, f"{len(wells)} wells x {len(steps)} readings is too many to run live; "
+                                 "choose a state, district or point")
+    members = min(23, ROW_BUDGET // rows) if future else 1
+    eng = get_engine()
+    eff, steps = eng.effect(wells, [Edit(req.start, end, 1 + req.rain_pct / 100, req.add_mm)], members=tuple(range(members)))
+    cum = np.cumsum(eff, axis=1)                        # (members, steps, wells): effect on depth
+    q = np.percentile(cum.mean(axis=2), [10, 50, 90], axis=0)
+    readings = [{"date": reading_date(y, si).isoformat(),
+                 "depth_effect_m": {"p10": round(float(a), 4), "p50": round(float(b), 4), "p90": round(float(c), 4)}}
+                for (y, si), a, b, c in zip(steps, *q)]
+    peak = int(np.argmax(np.abs(q[1]))) if steps else 0
+    per_well = np.median(cum[:, peak, :], axis=0) if steps else np.zeros(len(wells))
+
+    ctx = eng.context(wells, req.start, end)
+    added = ctx.get("recorded_mm", ctx["normal_mm"]) * req.rain_pct / 100 + req.add_mm * ((end - req.start).days + 1)
+    ctx = {k: round(v, 1) for k, v in ctx.items()} | {
+        "added_mm": round(added, 1), "season": _season(req.start),
+        "added_vs_normal": round(added / ctx["normal_mm"], 2) if ctx["normal_mm"] > 0.5 else None}
+    return {
+        "place": label, "wells": int(len(wells)), "past": not future, "members": members,
+        "edit": {"start": str(req.start), "end": str(end), "rain_pct": req.rain_pct, "add_mm": req.add_mm},
+        "rain_context": ctx, "readings": readings, "peak": readings[peak] if readings else None,
+        "per_well_at_peak": [{"index": int(i), "depth_effect_m": round(float(v), 4)} for i, v in zip(wells, per_well)],
+    }
 
 
 @app.get("/api", include_in_schema=False)

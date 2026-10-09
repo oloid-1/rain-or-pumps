@@ -53,3 +53,4 @@ simulator/ui/data/scenario/
 simulator/ui/data/wells.json
 simulator/ui/data/pressure.json
 simulator/ui/data/campaigns.json
+simulator/ui/data/forecast/

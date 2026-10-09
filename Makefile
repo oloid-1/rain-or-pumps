@@ -5,7 +5,7 @@
 #   make all      the three above, in order
 PY ?= python3
 
-.PHONY: all data cube train cv report bilstm-data bilstm geo sim ui-data ui api test-api test fetch clean-built
+.PHONY: all data cube train cv report bilstm-data bilstm geo places sim ui-data forecast ui api test-api test fetch clean-built
 
 all: data train report
 
@@ -37,6 +37,10 @@ bilstm-data:
 bilstm:
 	cd models && $(PY) train_bilstm.py --epochs 25
 
+## simulator: the town list behind the search box (needs data/geo/raw/geonames/cities1000.zip)
+places:
+	$(PY) simulator/geo/build_places.py
+
 ## simulator: map layers (needs data/geo/raw/, see simulator/README.md)
 geo:
 	$(PY) simulator/geo/build_geo.py
@@ -49,7 +53,11 @@ sim:
 ui-data:
 	$(PY) simulator/ui/build_ui_data.py --run simulator/artifacts
 
-## simulator: serve the UI at http://localhost:8765
+## simulator: the forecast table, its backtest and the What if engine's inputs (after ui-data; ~18 min on CPU)
+forecast:
+	$(PY) simulator/forecast/build_forecast.py
+
+## simulator: the UI as plain files at http://localhost:8765 (Replay and Pressure only; What if and Forecast need `make api`)
 ui:
 	$(PY) -m http.server 8765 -d simulator/ui
 

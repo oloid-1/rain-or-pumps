@@ -1,6 +1,5 @@
-// Rain or Pumps simulator: replay recorded rain, run rain scenarios through the
-// simulator model in the browser, and map the part of the fall rain does not explain.
-// Data comes from simulator/ui/build_ui_data.py and simulator/geo/build_geo.py.
+// Rain or Pumps map UI. Data from simulator/ui/build_ui_data.py, simulator/geo/ and
+// simulator/forecast/; What if and Future call the FastAPI service in simulator/api.
 
 const D = "data/";
 const $ = (s) => document.querySelector(s);
@@ -11,20 +10,10 @@ const DAY_MS = 86400000;
 const S = {
   mode: "replay", day: 0, playing: false, speed: 6, years: new Map(), pending: new Map(),
   grid: null, cellAt: null, today: null, national: null, wells: [], camps: [], campMs: [],
-  obsByCamp: [], depthByCamp: [], curCamp: -1, scen: null, scenByWell: null, sess: null,
-  meta: null, pressure: null, distFeatures: [],
+  obsByCamp: [], curCamp: -1, wellIx: new Map(), api: false, pressure: null, distFeatures: [],
 };
 
 // ---------------------------------------------------------------- utilities
-const half = (() => {           // float16 -> float32 lookup
-  const t = new Float32Array(65536);
-  for (let h = 0; h < 65536; h++) {
-    const s = h & 0x8000 ? -1 : 1, e = (h >> 10) & 31, f = h & 1023;
-    t[h] = e === 0 ? s * 2 ** -14 * (f / 1024) : e === 31 ? (f ? NaN : s * Infinity) : s * 2 ** (e - 15) * (1 + f / 1024);
-  }
-  return t;
-})();
-const f16 = (buf, off, n) => { const u = new Uint16Array(buf, off, n), o = new Float32Array(n); for (let i = 0; i < n; i++) o[i] = half[u[i]]; return o; };
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 const fmtM = (x, d = 2) => (x == null || Number.isNaN(x)) ? "–" : `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.abs(x).toFixed(d)} m`;
 const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
@@ -189,7 +178,7 @@ function setCampaign(c) {
     : "No reading yet.";
   $("#camp-rise").style.flexGrow = rise; $("#camp-fall").style.flexGrow = fall;
   $("#camp-rise-l").textContent = `${rise.toLocaleString()} rose`; $("#camp-fall-l").textContent = `${fall.toLocaleString()} fell`;
-  paintWells((i) => (vals ? vals[i] : NaN), () => false);
+  paintWells((i) => (vals ? vals[i] : NaN));
 }
 
 // ---------------------------------------------------------------- timeline
@@ -297,162 +286,326 @@ function fxLoop() {
 }
 
 // ---------------------------------------------------------------- wells
-// one setData per repaint, carrying only the wells that have a value. Per-feature
-// state updates (one per well) were what made switching modes feel slow.
-function paintWells(valueOf, ringOf) {
+// one setData per repaint; per-feature state updates were too slow on mode switch
+function paintWells(valueOf, scale = 1) {
   const features = [];
   for (let i = 0; i < S.wells.length; i++) {
     const v = valueOf(i);
     if (Number.isNaN(v)) continue;
     const w = S.wells[i];
-    features.push({ type: "Feature", id: i, properties: { i, v, a: Math.min(Math.abs(v), 4), ring: !!ringOf(i) },
+    features.push({ type: "Feature", id: i, properties: { i, r: v, v: v * scale, a: Math.min(Math.abs(v * scale), 4) },
       geometry: { type: "Point", coordinates: [w.lon, w.lat] } });
   }
   map.getSource("wells")?.setData({ type: "FeatureCollection", features });
 }
 
-// ---------------------------------------------------------------- scenario
-// When the page is served by the FastAPI service (simulator/api), scenarios run there:
-// same model file, identical numbers, and far faster than WebAssembly in the page.
-async function predictApi(pct, region) {
-  const r = await fetch("api/scenario", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ year: S.scen.y, rain_pct: pct, state: region || null, details: true }) });
-  if (!r.ok) throw new Error(`API ${r.status}: ${await r.text()}`);
-  const out = S.scen.base.slice();
-  for (const w of (await r.json()).wells) out[w.row] = w.predicted_change_m;
+// ---------------------------------------------------------------- api
+async function api(path, opt) {
+  const r = await fetch(path, opt);
+  if (!r.ok) {
+    let m = `${r.status} ${r.statusText}`;
+    try { const d = (await r.json()).detail; m = typeof d === "string" ? d : d.map((x) => x.msg).join("; "); } catch { }
+    throw new Error(m);
+  }
+  return r.json();
+}
+const NO_API = "Start the service to use this: make api, then open http://localhost:8000";
+const fmtDate = (d) => new Date(d + "T00:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+const cm = (m) => `${Math.abs(m * 100).toFixed(Math.abs(m) < 0.1 ? 1 : 0)} cm`;
+
+// ---------------------------------------------------------------- place (What if, Future)
+// q is what the API gets: {}, {state}, {district, state}, {well} or {lat, lon, radius_km}
+S.place = { q: {}, label: "All India" };
+
+function circle(lng, lat, km) {
+  const pts = [];
+  for (let k = 0; k <= 64; k++) {
+    const a = k / 64 * 2 * Math.PI;
+    pts.push([lng + km / (111.32 * Math.cos(lat * Math.PI / 180)) * Math.cos(a), lat + km / 110.57 * Math.sin(a)]);
+  }
+  return { type: "Feature", geometry: { type: "Polygon", coordinates: [pts] } };
+}
+
+function placeShape(q) {
+  if (q.lat != null) return [circle(q.lon, q.lat, q.radius_km)];
+  if (q.well != null) { const w = S.wells[S.wellIx.get(q.well)]; return [circle(w.lon, w.lat, 6)]; }
+  const norm = (s) => s.toLowerCase();
+  if (q.district) return S.distFeatures.filter((f) => norm(f.properties.name) === norm(q.district) && (!q.state || norm(f.properties.state) === norm(q.state)));
+  if (q.state) return S.distFeatures.filter((f) => norm(f.properties.state) === norm(q.state));
+  return [];
+}
+
+function setPlace(q, label, { fly = false, name = null } = {}) {
+  S.place = { q, label, name };
+  $("#pl-now").textContent = label;
+  const shape = placeShape(q);
+  map.getSource("place")?.setData({ type: "FeatureCollection", features: shape });
+  if (fly && shape.length) {
+    const c = shape.flatMap((f) => f.geometry.type === "Polygon" ? f.geometry.coordinates[0] : f.geometry.coordinates.flatMap((p) => p[0]));
+    const xs = c.map((p) => p[0]), ys = c.map((p) => p[1]);
+    map.fitBounds([[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]], { padding: 80, maxZoom: 8.5, duration: REDUCED ? 0 : 1000 });
+  }
+  if (S.mode === "forecast") runForecast();
+  if (S.mode === "whatif") { wiKey = ""; $("#wi-result").hidden = true; paintWells(() => NaN); }
+}
+
+// ---------------------------------------------------------------- search
+// states, districts and towns (places.json); a town resolves to its district
+const fold = (t) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+let SEARCH = [], qItems = [], qSel = -1;
+
+function buildSearch(towns) {
+  const n = new Map();
+  for (const w of S.wells) { n.set(`${w.district}|${w.state}`, (n.get(`${w.district}|${w.state}`) || 0) + 1); n.set(w.state, (n.get(w.state) || 0) + 1); }
+  S.wellsIn = (k) => n.get(k) || 0;
+  const states = [...new Set(S.distFeatures.map((f) => f.properties.state))];
+  SEARCH = [
+    ...states.map((st) => ({ kind: "state", name: st, state: st, keys: [fold(st)], order: 0 })),
+    ...S.distFeatures.map((f, id) => ({ kind: "district", name: f.properties.name, state: f.properties.state, id, keys: [fold(f.properties.name)], order: 1 })),
+    ...towns.map(([name, alts, district, state, lat, lon, pop]) => ({ kind: "town", name, alts, district, state, lat, lon, pop, keys: [fold(name), ...alts.map(fold)], order: 2 })),
+  ];
+}
+
+function findPlaces(q) {
+  const f = fold(q);
+  if (f.length < 2) return [];
+  const hits = [];
+  for (const e of SEARCH) {
+    let best = -1, via = 0;
+    e.keys.forEach((k, i) => {
+      const sc = k === f ? 3 : k.startsWith(f) ? 2 : k.includes(" " + f) ? 1 : -1;
+      if (sc > best || (sc === best && i === 0)) { best = sc; via = i; }
+    });
+    if (best >= 0) hits.push({ e, best, via });
+  }
+  hits.sort((a, b) => b.best - a.best || a.e.order - b.e.order || (b.e.pop || 0) - (a.e.pop || 0));
+  // drop a town when its district of the same name is already listed
+  const seen = new Set(), out = [];
+  for (const h of hits) {
+    const k = h.e.kind === "state" ? h.e.name : `${fold(h.e.kind === "town" ? h.e.district : h.e.name)}|${h.e.state}|${fold(h.e.name)}`;
+    if (seen.has(k)) continue;
+    seen.add(k); out.push(h);
+    if (out.length === 8) break;
+  }
   return out;
 }
 
-// The model runs in model-worker.js, off the main thread.
-let worker = null, workerReady = null, jobId = 0;
-const jobs = new Map();
-function initModel() {
-  if (workerReady) return workerReady;
-  worker = new Worker("model-worker.js");
-  workerReady = new Promise((resolve, reject) => {
-    worker.onmessage = (e) => {
-      const m = e.data;
-      if (m.type === "ready") resolve();
-      else if (m.type === "progress" && m.id === jobId && S.mode === "scenario") loading(true, `Running the model · ${Math.round(100 * m.done / m.n)}%`);
-      else if (m.type === "done") { jobs.get(m.id)?.resolve(m.out); jobs.delete(m.id); }
-      else if (m.type === "error") { (jobs.get(m.id) || { reject })?.reject(new Error(m.message)); jobs.delete(m.id); }
-    };
-    worker.onerror = (e) => reject(new Error(e.message || "model worker failed"));
+const esc = (t) => t.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function showSuggestions() {
+  const q = $("#q").value;
+  qItems = findPlaces(q); qSel = qItems.length ? 0 : -1;
+  const list = $("#q-list");
+  if (fold(q).length < 2) { list.hidden = true; $("#q").setAttribute("aria-expanded", "false"); return; }
+  list.innerHTML = qItems.length ? qItems.map(({ e, via }, i) => {
+    const wells = e.kind === "state" ? S.wellsIn(e.state) : S.wellsIn(`${e.kind === "town" ? e.district : e.name}|${e.state}`);
+    const what = e.kind === "state" ? "state" : e.kind === "district" ? `district · ${e.state}` : `in ${e.district} district, ${e.state}`;
+    const also = e.kind === "town" && via > 0 ? ` <span class="via">(${esc(e.alts[via - 1])})</span>` : "";
+    return `<li role="option" id="q-o${i}" aria-selected="${i === qSel}" data-i="${i}"><span>${esc(e.name)}${also}<span class="what">${esc(what)}</span></span>` +
+      `<span class="n">${wells ? `${wells} well${wells === 1 ? "" : "s"}` : "no wells"}</span></li>`;
+  }).join("") : `<li aria-disabled="true"><span class="st">Nothing called “${esc(q)}” in India's towns, districts or states</span></li>`;
+  list.hidden = false; $("#q").setAttribute("aria-expanded", "true");
+}
+
+function districtId(name, state) {
+  return S.distFeatures.findIndex((f) => f.properties.name === name && f.properties.state === state);
+}
+
+// districts with no wells (Jaipur, Hyderabad, Kolkata...) use the smallest circle
+// around the town that has at least 3 wells
+const RADII = [25, 50, 100, 150, 200, 300];
+function nearestRadius(lat, lon, need = 3) {
+  const km = S.wells.map((w) => {
+    const dl = (w.lat - lat) * Math.PI / 180, dg = (w.lon - lon) * Math.PI / 180;
+    const a = Math.sin(dl / 2) ** 2 + Math.cos(lat * Math.PI / 180) * Math.cos(w.lat * Math.PI / 180) * Math.sin(dg / 2) ** 2;
+    return 12742 * Math.asin(Math.sqrt(a));
   });
-  worker.postMessage({ type: "init", url: new URL(D + "sim.onnx", location.href).href });
-  return workerReady;
+  for (const r of RADII) { const n = km.filter((d) => d <= r).length; if (n >= need) return [r, n]; }
+  return [RADII.at(-1), km.filter((d) => d <= RADII.at(-1)).length];
 }
-
-// Opening a year needs only the index: the model's prediction at recorded rain was
-// computed when the data was built. The model and its inputs load only when the
-// rain is changed, so switching to Scenario never waits on inference.
-function openScenarioYear(y) {
-  const idx = S.scenIndex.years[y], [, T, C] = S.scenIndex.layout.seq;
-  S.scen = { y, n: idx.rows, T, C, nn: S.scenIndex.layout.num[1], nc: S.scenIndex.layout.cat[1],
-    idx, base: Float32Array.from(idx.base), seq: null, inputs: null };
-  scenKey = "";
-}
-
-function scenarioInputs() {
-  const sc = S.scen;
-  sc.inputs ??= fetch(`${D}scenario/${sc.y}.bin`).then((r) => r.arrayBuffer()).then((buf) => {
-    const { n, T, C, nn, nc } = sc, offN = n * T * C * 2;
-    sc.seq = f16(buf, 0, n * T * C);
-    sc.num = new Float32Array(buf.slice(offN, offN + n * nn * 4));
-    const catU = new Uint8Array(buf, offN + n * nn * 4, n * nc);
-    sc.cat = new BigInt64Array(n * nc);
-    for (let i = 0; i < catU.length; i++) sc.cat[i] = BigInt(catU[i]);
-  });
-  return sc.inputs;
-}
-
-function scaledSeq(f, rows) {
-  const { seq, T, C } = S.scen, out = seq.slice(), m = S.meta, ch = m.channels;
-  const r = ch.indexOf("rain_mm"), a = ch.indexOf("rain_anom_mm");
-  const rs = m.channel_scaling.rain_mm, as = a >= 0 ? m.channel_scaling.rain_anom_mm : null;
-  for (const i of rows) for (let t = 0; t < T; t++) {
-    const o = (i * T + t) * C;
-    const rain = Math.max(0, Math.expm1(seq[o + r] * rs.std + rs.mean));
-    out[o + r] = (Math.log1p(rain * f) - rs.mean) / rs.std;
-    if (as) {
-      const u = seq[o + a] * as.std + as.mean;
-      const an = Math.sign(u) * Math.expm1(Math.abs(u)) + (f - 1) * rain;
-      out[o + a] = (Math.sign(an) * Math.log1p(Math.abs(an)) - as.mean) / as.std;
+function goTo(e) {
+  $("#q-list").hidden = true; $("#q").setAttribute("aria-expanded", "false");
+  $("#q").value = e.kind === "town" ? `${e.name}, ${e.district}` : e.name;
+  $("#q").blur();
+  if (e.kind === "state") { setPlace({ state: e.state }, e.state, { fly: true }); return; }
+  const dname = e.kind === "town" ? e.district : e.name, id = districtId(dname, e.state);
+  const label = e.kind === "town" ? `${e.name} → ${dname} district, ${e.state}` : `${dname}, ${e.state}`;
+  if (S.wellsIn(`${dname}|${e.state}`)) setPlace({ district: dname, state: e.state }, label, { fly: true, name: `${dname}, ${e.state}` });
+  else {
+    let lat = e.lat, lon = e.lon;
+    if (lat == null) {      // district picked directly: centre on its namesake town if there is one
+      const t = SEARCH.find((x) => x.kind === "town" && x.district === e.name && x.state === e.state && fold(x.name) === fold(e.name));
+      if (t) { lat = t.lat; lon = t.lon; }
     }
+    if (lat == null) {
+      const g = S.distFeatures[id].geometry, c = g.type === "Polygon" ? g.coordinates[0] : g.coordinates.flatMap((x) => x[0]);
+      lon = (Math.min(...c.map((x) => x[0])) + Math.max(...c.map((x) => x[0]))) / 2; lat = (Math.min(...c.map((x) => x[1])) + Math.max(...c.map((x) => x[1]))) / 2;
+    }
+    const [r, n] = nearestRadius(lat, lon);
+    $("#pl-radius").value = r;
+    setPlace({ lat: +lat.toFixed(4), lon: +lon.toFixed(4), radius_km: r }, `${label}: no wells there, so the ${n} within ${r} km`,
+      { name: `the area around ${e.name}` });
+    map.flyTo({ center: [lon, lat], zoom: r <= 50 ? 7.4 : r <= 150 ? 6.4 : 5.6, duration: REDUCED ? 0 : 1000 });
   }
-  return out;
+  if (S.mode === "pressure" && id >= 0) showDistrict(id);
 }
 
-function predict(f, rows) {
-  const { n, T, C, nn, nc } = S.scen;
-  const seq = scaledSeq(f, rows);                 // a fresh copy, handed to the worker
-  const id = ++jobId;
-  return new Promise((resolve, reject) => {
-    jobs.set(id, { resolve, reject });
-    worker.postMessage({ type: "run", id, n, T, C, nn, nc, seq, num: S.scen.num.slice(), cat: S.scen.cat.slice() }, [seq.buffer]);
-  });
-}
-
-let scenRun = 0, scenKey = "", scenPaint = null;
-async function runScenario() {
-  if (!S.scen) return;
-  const pct = +$("#sc-rain").value, f = 1 + pct / 100, region = $("#sc-region").value, id = ++scenRun;
-  const key = `${S.scen.y}|${pct}|${region}`;
-  if (key === scenKey && scenPaint) { scenPaint(); return; }      // same inputs: repaint, don't re-run
-  $("#sc-pct").textContent = `${pct > 0 ? "+" : pct < 0 ? "−" : ""}${Math.abs(pct)}%`;
-  $$(".presets .chip").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.pct === pct)));
-  const { idx, n } = S.scen;
-  const rows = [...Array(n).keys()].filter((i) => !region || S.wells[idx.well[i]].state === region);
-  let pred = S.scen.base;
-  // never show the last scenario's numbers under the new slider value
-  $$(".result, [data-panel='scenario'] .kpis").forEach((el) => el.classList.toggle("pending", f !== 1));
-  if (f !== 1) {
-    $("#sc-diff").textContent = "computing…"; $("#sc-arrow").className = "arrow";
-    $("#sc-diff-sub").textContent = `running the model on every well with ${pct > 0 ? "+" : "−"}${Math.abs(pct)}% rain`;
-    loading(true, S.api ? "Running the model on the API" : "Running the model");
-    if (S.api) pred = await predictApi(pct, region);
-    else { await initModel(); await scenarioInputs(); if (id !== scenRun) return; pred = await predict(f, rows); }
-    loading(false);
+// ---------------------------------------------------------------- charts
+// series: {name, color, pts: [[t, y]], band?: [[t, lo, hi]], dash?, dots?}; invert for depth
+function bandChart(series, { invert = false, zero = false, unit = "m", shadeFrom = null, marker = null, yfmt = (v) => v.toFixed(1) } = {}) {
+  const W = 330, H = 170, P = { l: 38, r: 8, t: 10, b: 20 };
+  const ys = series.flatMap((s) => [...s.pts.map((p) => p[1]), ...(s.band || []).flatMap((b) => [b[1], b[2]])]);
+  const xs = series.flatMap((s) => s.pts.map((p) => p[0]));
+  if (!xs.length) return "";
+  let [x0, x1] = [Math.min(...xs), Math.max(...xs)], [y0, y1] = [Math.min(...ys), Math.max(...ys)];
+  if (zero) { y0 = Math.min(y0, 0); y1 = Math.max(y1, 0); }
+  const pad = Math.max((y1 - y0) * 0.08, 0.02); y0 -= pad; y1 += pad;
+  if (x1 === x0) x1 = x0 + DAY_MS * 90;
+  const X = (x) => P.l + (x - x0) / (x1 - x0) * (W - P.l - P.r);
+  const Y = (y) => invert ? P.t + (y - y0) / (y1 - y0) * (H - P.t - P.b) : H - P.b - (y - y0) / (y1 - y0) * (H - P.t - P.b);
+  const xy = (x, y) => `${X(x).toFixed(1)},${Y(y).toFixed(1)}`;
+  let svg = "";
+  if (shadeFrom != null && shadeFrom < x1) svg += `<rect x="${X(Math.max(shadeFrom, x0))}" y="${P.t}" width="${X(x1) - X(Math.max(shadeFrom, x0))}" height="${H - P.t - P.b}" fill="url(#hatch)"/><text x="${X(x1) - 2}" y="${P.t + 10}" text-anchor="end" fill="#8a8270">untested</text>`;
+  svg += [y0 + pad, (y0 + y1) / 2, y1 - pad].map((v) => `<text x="${P.l - 6}" y="${Y(v) + 3}" text-anchor="end">${yfmt(v)}</text><line x1="${P.l}" x2="${W - P.r}" y1="${Y(v)}" y2="${Y(v)}" class="g"/>`).join("");
+  const yr0 = new Date(x0).getUTCFullYear(), yr1 = new Date(x1).getUTCFullYear(), every = Math.max(1, Math.ceil((yr1 - yr0) / 5));
+  for (let y = yr0 + 1; y <= yr1; y += every) { const t = Date.UTC(y, 0, 1); svg += `<text x="${X(t)}" y="${H - 4}" text-anchor="middle">${y}</text><line x1="${X(t)}" x2="${X(t)}" y1="${H - P.b}" y2="${H - P.b + 3}" stroke="#8a8270"/>`; }
+  if (zero) svg += `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(0)}" y2="${Y(0)}" stroke="#8a8270" stroke-dasharray="2 3"/>`;
+  if (marker != null) svg += `<line x1="${X(marker)}" x2="${X(marker)}" y1="${P.t}" y2="${H - P.b}" stroke="#1d232b" stroke-dasharray="3 3"/>`;
+  for (const s of series) {
+    if (s.band?.length > 1) svg += `<path d="M${s.band.map((b) => xy(b[0], b[1])).join(" L")} L${s.band.slice().reverse().map((b) => xy(b[0], b[2])).join(" L")}Z" fill="${s.color}" fill-opacity=".14"/>`;
+    if (s.pts.length > 1) svg += `<polyline fill="none" stroke="${s.color}" stroke-width="1.8" stroke-linejoin="round" ${s.dash ? 'stroke-dasharray="4 3"' : ""} points="${s.pts.map((p) => xy(p[0], p[1])).join(" ")}"/>`;
+    if (s.dots || s.pts.length === 1) svg += s.pts.map((p) => `<circle cx="${X(p[0]).toFixed(1)}" cy="${Y(p[1]).toFixed(1)}" r="2" fill="${s.color}"/>`).join("");
   }
-  if (id !== scenRun) return;
-  const byWell = new Map(); let sum = 0, diff = 0, fall = 0, rise = 0, wl = 0, wlBase = 0;
-  for (const i of rows) {
-    const p = pred[i], w = idx.well[i], after = idx.depth_before[i] + p;
-    byWell.set(w, { p, ring: after <= 2, i });
-    sum += p; diff += p - S.scen.base[i]; p > 0 ? fall++ : rise++;
-    if (after <= 2) wl++; if (idx.depth_before[i] + S.scen.base[i] <= 2) wlBase++;
+  const key = series.map((s, i) => `<tspan fill="${s.color}" dx="${i ? 10 : 0}">— ${s.name}</tspan>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H + 14}" font-family="IBM Plex Mono" font-size="10" fill="#7a7364"><defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" fill="rgba(60,50,30,.03)"/><line x1="0" y1="0" x2="0" y2="6" stroke="rgba(60,50,30,.09)" stroke-width="2"/></pattern></defs><style>.g{stroke:rgba(60,50,30,.1)}</style>${svg}<text x="${P.l}" y="${H + 12}">${key}<tspan dx="8">(${unit})</tspan></text></svg>`;
+}
+const tms = (d) => Date.parse(d + "T00:00:00Z");
+const placeName = (r) => S.place.name || r.place;
+
+// ---------------------------------------------------------------- what if
+// the API returns depth effects (positive = deeper); the page talks about level, so flip
+let wiKey = "", wiRun = 0, wiLast = null;
+function wiBody() {
+  const kind = $('input[name="wi-kind"]:checked').value, start = $("#wi-start").value;
+  const days = +$("#wi-days").value;
+  const end = start ? new Date(tms(start) + (days - 1) * DAY_MS).toISOString().slice(0, 10) : start;
+  return { ...S.place.q, start, end, rain_pct: kind === "pct" ? +$("#wi-pct").value : 0, add_mm: kind === "mm" ? +$("#wi-mm").value : 0 };
+}
+function wiLabel(b) {
+  if (b.add_mm) return `${b.add_mm} mm more rain a day`;
+  return b.rain_pct === -100 ? "no rain at all" : `${Math.abs(b.rain_pct)}% ${b.rain_pct > 0 ? "more" : "less"} rain`;
+}
+function whenLabel(b) {
+  return b.start === b.end ? fmtDate(b.start) : `${fmtDate(b.start)} to ${fmtDate(b.end)}`;
+}
+async function runWhatIf() {
+  const res = $("#wi-result");
+  if (!S.api) { res.hidden = false; $("#wi-big").textContent = "–"; $("#wi-sub").textContent = NO_API; return; }
+  const body = wiBody();
+  if (!body.start) { res.hidden = false; $("#wi-big").textContent = "–"; $("#wi-sub").textContent = "Pick a date first."; return; }
+  if (!body.add_mm && !body.rain_pct) { res.hidden = false; $("#wi-big").textContent = "no change"; $("#wi-sub").textContent = "Pick how much rain to add or take away."; return; }
+  const key = JSON.stringify(body), id = ++wiRun;
+  if (key === wiKey && wiLast) { renderWhatIf(wiLast, body); return; }
+  const future = body.end > "2022-12-31" || body.start > "2020-11-15";
+  $("#wi-run").disabled = true; res.classList.add("pending");
+  loading(true, future ? "Working it out for 23 kinds of rain year" : "Working it out");
+  try {
+    const r = await api("api/simulate", { method: "POST", headers: { "Content-Type": "application/json" }, body: key });
+    if (id !== wiRun) return;
+    wiKey = key; wiLast = r; renderWhatIf(r, body);
+  } catch (e) {
+    if (id !== wiRun) return;
+    res.hidden = false; $("#wi-big").textContent = "–"; $("#wi-arrow").className = "arrow"; $("#wi-sub").textContent = e.message;
+    $("#wi-chart").innerHTML = ""; $("#wi-kv").innerHTML = "";
+  } finally {
+    if (id === wiRun) { loading(false); $("#wi-run").disabled = false; res.classList.remove("pending"); }
   }
-  $$(".pending").forEach((el) => el.classList.remove("pending"));
-  const k = rows.length || 1, dm = diff / k;
-  // dm is in delta_h_m (positive = fell); the headline speaks in water level, so flip it
-  $("#sc-diff").textContent = f === 1 ? "as recorded" : `${-dm >= 0 ? "+" : "−"}${Math.abs(dm * 100).toFixed(1)} cm`;
-  $("#sc-arrow").className = "arrow" + (f === 1 ? "" : dm < 0 ? " up" : " down");
-  $("#sc-diff-sub").textContent = f === 1 ? "move the slider to change the rain" :
-    `water level ${dm < 0 ? "higher" : "lower"} on average than with the rain that actually fell, across ${rows.length.toLocaleString()} wells`;
-  $("#sc-mean").textContent = fmtM(sum / k);
-  $("#sc-split").textContent = `${fall.toLocaleString()} ↓  ${rise.toLocaleString()} ↑`;
-  $("#sc-wl").textContent = `${wl}${f === 1 ? "" : ` (${wl - wlBase >= 0 ? "+" : "−"}${Math.abs(wl - wlBase)})`}`;
-  S.scenByWell = byWell;
-  scenKey = key;
-  scenPaint = () => paintWells((i) => (byWell.has(i) ? byWell.get(i).p : NaN), (i) => byWell.get(i)?.ring);
-  scenPaint();
 }
-
-// load the model and the base predictions in the background, so Scenario opens at once
-let warm = null;
-function warmScenario() {
-  // fetch and compile only; nothing runs until the rain slider moves
-  warm ??= (async () => { await initModel(); if (!S.scen) openScenarioYear(+$("#sc-year").value); await scenarioInputs(); })();
-  return warm;
+function renderWhatIf(r, body) {
+  $("#wi-result").hidden = false;
+  if (!r.peak) { $("#wi-big").textContent = "–"; $("#wi-sub").textContent = "No well reading falls within two years of those days."; return; }
+  const e = r.peak.depth_effect_m, past = r.past, rise = -e.p50, none = Math.abs(rise) < 0.0005;
+  $("#wi-big").textContent = none ? "no change" : `${rise > 0 ? "rises" : "falls"} ${cm(rise)}`;
+  $("#wi-arrow").className = "arrow" + (none ? "" : rise > 0 ? " up" : " down");
+  $("#wi-sub").textContent = none ? `With ${wiLabel(body)} on ${whenLabel(body)}, the wells in ${placeName(r)} barely move.`
+    : `With ${wiLabel(body)} on ${whenLabel(body)}, the water level in ${placeName(r)} ${rise > 0 ? "rises" : "falls"} by about ${cm(rise)} at the ${fmtDate(r.peak.date)} well reading` +
+      (past ? ", compared with the rain that actually fell." : `. Depending on the rain around it: ${cm(-e.p90)} to ${cm(-e.p10)}.`);
+  const pts = r.readings.map((x) => [tms(x.date), -x.depth_effect_m.p50 * 100]);
+  const band = past ? null : r.readings.map((x) => [tms(x.date), -x.depth_effect_m.p90 * 100, -x.depth_effect_m.p10 * 100]);
+  $("#wi-chart").innerHTML = bandChart([{ name: "water level change", color: "#265ca8", pts, band, dots: true }],
+    { zero: true, unit: "cm, up = rises", marker: tms(body.start), yfmt: (v) => v.toFixed(Math.abs(v) < 2 ? 1 : 0) });
+  $("#wi-chart").setAttribute("aria-label", `Water level change at ${r.readings.length} well readings after the rain; largest ${cm(rise)} on ${r.peak.date}`);
+  const c = r.rain_context;
+  const kv = [["Season", c.season], ["Rain added", `${c.added_mm >= 0 ? "" : "−"}${Math.abs(c.added_mm).toLocaleString()} mm`],
+    ["Usual rain on those days", `${c.normal_mm.toLocaleString()} mm`]];
+  if (c.recorded_mm != null) kv.push(["Rain that actually fell", `${c.recorded_mm.toLocaleString()} mm`]);
+  if (c.added_vs_normal != null) kv.push(["Added, against usual", `${c.added_vs_normal}×`]);
+  kv.push(["Wells used", r.wells.toLocaleString()], ["Readings affected", r.readings.length]);
+  if (!past) kv.push(["Rain years tried", r.members]);
+  $("#wi-kv").innerHTML = kv.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+  const by = new Map(r.per_well_at_peak.map((w) => [w.index, w.depth_effect_m]));
+  wiPaint = () => paintWells((i) => (by.has(i) ? by.get(i) : NaN), 10);
+  wiPaint();
 }
+let wiPaint = null;
 
-// ---------------------------------------------------------------- pressure
+// ---------------------------------------------------------------- future
+const level = (depthChange) => (Math.abs(depthChange) < 0.005 ? "no change" : `${depthChange > 0 ? "falls" : "rises"} ${Math.abs(depthChange).toFixed(2)} m`);
+let fcRun = 0, fcKey = "", fcLast = null;
+async function runForecast() {
+  const to = +$("#fc-year").value, pct = +$("#fc-rain").value;
+  $("#fc-year-out").textContent = to;
+  $("#fc-k").textContent = `Water level in November ${to}, compared with November 2022`;
+  if (!S.api) { $("#fc-big").textContent = "–"; $("#fc-sub").textContent = NO_API; return; }
+  const q = new URLSearchParams({ to_year: to, rain_pct: pct, ...Object.fromEntries(Object.entries(S.place.q).filter(([, v]) => v != null)) });
+  const key = q.toString(), id = ++fcRun;
+  if (key === fcKey && fcLast) { renderForecast(fcLast); return; }
+  $("[data-panel='forecast'] .result").classList.add("pending");
+  try {
+    const r = await api(`api/forecast?${key}`);
+    if (id !== fcRun) return;
+    fcKey = key; fcLast = r; renderForecast(r);
+  } catch (e) {
+    if (id !== fcRun) return;
+    $("#fc-big").textContent = $("#fc-trend").textContent = "–"; $("#fc-sub").textContent = e.message; $("#fc-chart").innerHTML = "";
+  } finally {
+    if (id === fcRun) $$(".pending").forEach((el) => el.classList.remove("pending"));
+  }
+}
+function renderForecast(r) {
+  const s = r.summary, last = r.forecast.at(-1), d0 = r.start.depth_m;
+  const showRain = $("#fc-show-rain").checked, showTrend = $("#fc-show-trend").checked;
+  $("#fc-big").textContent = level(s.rain_only_change_m);
+  $("#fc-trend").textContent = level(s.rain_plus_trend_change_m);
+  $(".ans-rain").classList.toggle("off", !showRain); $(".ans-trend").classList.toggle("off", !showTrend);
+  const lo = level(last.rain_only.p10 - d0), hi = level(last.rain_only.p90 - d0);
+  $("#fc-sub").textContent = `${placeName(r)}, ${r.wells.toLocaleString()} well${r.wells === 1 ? "" : "s"}. ` +
+    `Rain alone: ${lo === hi ? lo : `${lo} to ${hi}`}, depending on the years. ` +
+    (last.beyond_tested_skill ? "This far ahead, trust the direction more than the number." : "");
+  const series = [{ name: "measured", color: "#1d232b", pts: r.history.map((h) => [tms(h.date), h.depth_m]), dots: true }];
+  const start = [tms(r.start.date), d0];
+  if (showRain) series.push({ name: "rain only", color: "#265ca8", pts: [start, ...r.forecast.map((x) => [tms(x.date), x.rain_only.p50])],
+    band: [[start[0], d0, d0], ...r.forecast.map((x) => [tms(x.date), x.rain_only.p10, x.rain_only.p90])] });
+  if (showTrend) series.push({ name: "with pumping", color: "#b4441a", dash: true, pts: [start, ...r.forecast.map((x) => [tms(x.date), x.rain_plus_trend.p50])],
+    band: [[start[0], d0, d0], ...r.forecast.map((x) => [tms(x.date), x.rain_plus_trend.p10, x.rain_plus_trend.p90])] });
+  const untested = r.forecast.find((x) => x.beyond_tested_skill);
+  $("#fc-chart").innerHTML = bandChart(series, { invert: true, unit: "m deep", marker: start[0], shadeFrom: untested ? tms(untested.date) : null });
+  $("#fc-chart").setAttribute("aria-label", `Water level, measured to 2022 and forecast to ${r.to_year}: rain only ${level(s.rain_only_change_m)}, with recent pumping ${level(s.rain_plus_trend_change_m)}`);
+  const by = new Map(r.per_well.map((w) => [w.index, w.change_m]));
+  fcPaint = () => paintWells((i) => (by.has(i) ? by.get(i) : NaN));
+  fcPaint();
+}
+let fcPaint = null;
+
+// ---------------------------------------------------------------- pumping hotspots
 let prKey = "";
+let prWorst = true;
 function renderPressure() {
   const a = Math.min(+$("#pr-from").value, +$("#pr-to").value), b = Math.max(+$("#pr-from").value, +$("#pr-to").value);
-  $("#pr-out").textContent = `${a}–${b}`;
-  if (prKey === `${a}-${b}`) return;
-  prKey = `${a}-${b}`;
+  const key = `${a}-${b}-${prWorst}`;
+  $("#pr-warn").hidden = a >= 2015;
+  $$("[data-years]").forEach((c) => c.setAttribute("aria-checked", String(c.dataset.years === `${a},${b}`)));
+  if (prKey === key) return;
+  prKey = key;
   const rank = [];
   S.distFeatures.forEach((f, id) => {
     const rec = S.pressure[`${f.properties.name}|${f.properties.state}`];
@@ -462,35 +615,17 @@ function renderPressure() {
     map.setFeatureState({ source: "districts", id }, { p: v });
     if (v != null && k >= Math.min(3, b - a + 1)) rank.push([f.properties.name, f.properties.state, v, id]);
   });
-  rank.sort((x, y) => y[2] - x[2]);
-  const top = rank.slice(0, 10), mx = Math.max(0.01, ...top.map((r) => r[2]));
+  rank.sort((x, y) => prWorst ? y[2] - x[2] : x[2] - y[2]);
+  const top = rank.slice(0, 10), mx = Math.max(0.01, ...top.map((r) => Math.abs(r[2])));
+  $("#pr-title").textContent = prWorst ? `Falling most beyond rain, ${a}–${b}` : `Holding up best against rain, ${a}–${b}`;
+  $("#pr-rank").classList.toggle("better", !prWorst);
   $("#pr-rank").innerHTML = top.map(([n, s, v, id]) =>
-    `<li tabindex="0" data-id="${id}"><span class="nm">${n} <span class="st">${s}</span></span><span class="val">${fmtM(v)}</span>` +
-    `<span class="bar-in" style="width:${Math.max(4, v / mx * 100)}%"></span></li>`).join("");
+    `<li tabindex="0" data-id="${id}"><span class="nm">${n} <span class="st">${s}</span></span>` +
+    `<span class="val">${Math.abs(v).toFixed(2)} m ${v > 0 ? "more fall" : "less fall"}</span>` +
+    `<span class="bar-in" style="width:${Math.max(4, Math.abs(v) / mx * 100)}%"></span></li>`).join("");
 }
 
 // ---------------------------------------------------------------- detail panel
-function chart(series, { invert = false, unit = "m", zero = false } = {}) {
-  const W = 330, H = 150, P = { l: 36, r: 8, t: 10, b: 20 };
-  const pts = series.flatMap((s) => s.pts);
-  if (!pts.length) return "";
-  let [x0, x1] = [Math.min(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[0]))];
-  let [y0, y1] = [Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[1]))];
-  if (zero) { y0 = Math.min(y0, 0); y1 = Math.max(y1, 0); }
-  if (y1 - y0 < 0.5) { y0 -= 0.25; y1 += 0.25; }
-  if (x1 === x0) x1 = x0 + 1;
-  const X = (x) => P.l + (x - x0) / (x1 - x0) * (W - P.l - P.r);
-  const Y = (y) => invert ? P.t + (y - y0) / (y1 - y0) * (H - P.t - P.b) : H - P.b - (y - y0) / (y1 - y0) * (H - P.t - P.b);
-  const ticks = [y0, (y0 + y1) / 2, y1].map((v) => `<text x="${P.l - 6}" y="${Y(v) + 3}" text-anchor="end">${v.toFixed(1)}</text><line x1="${P.l}" x2="${W - P.r}" y1="${Y(v)}" y2="${Y(v)}" class="g"/>`).join("");
-  const xt = [x0, x1].map((v, i) => `<text x="${X(v)}" y="${H - 4}" text-anchor="${i ? "end" : "start"}">${new Date(v).getUTCFullYear()}</text>`).join("");
-  const z = zero ? `<line x1="${P.l}" x2="${W - P.r}" y1="${Y(0)}" y2="${Y(0)}" stroke="#8a8270" stroke-dasharray="2 3"/>` : "";
-  const s0 = series[0], edge = invert ? P.t : H - P.b;
-  const area = s0.fill ? `<path d="M${X(s0.pts[0][0])},${edge} ${s0.pts.map((p) => `L${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ")} L${X(s0.pts.at(-1)[0])},${edge}Z" fill="url(#ga)"/>` : "";
-  const lines = series.map((s) => `<polyline fill="none" stroke="${s.color}" stroke-width="1.8" stroke-linejoin="round" ${s.dash ? 'stroke-dasharray="4 3"' : ""} points="${s.pts.map((p) => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(" ")}"/>`).join("");
-  const key = series.map((s, i) => `<tspan fill="${s.color}" dx="${i ? 12 : 0}">— ${s.name}</tspan>`).join("");
-  return `<svg viewBox="0 0 ${W} ${H + 14}" font-family="IBM Plex Mono" font-size="10" fill="#7a7364"><defs><linearGradient id="ga" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#265ca8" stop-opacity=".18"/><stop offset="1" stop-color="#265ca8" stop-opacity="0"/></linearGradient></defs><style>.g{stroke:rgba(60,50,30,.1)}</style>${ticks}${xt}${z}${area}${lines}<text x="${P.l}" y="${H + 12}">${key}<tspan dx="8">(${unit})</tspan></text></svg>`;
-}
-
 function openDetail() {
   $("#detail").hidden = false;
   $("#detail").scrollIntoView({ behavior: REDUCED ? "auto" : "smooth", block: "nearest" });
@@ -503,15 +638,11 @@ function showWell(i) {
   $("#detail-kind").textContent = "Well";
   $("#detail-title").textContent = w.district;
   $("#detail-sub").textContent = `${w.state} · ${w.lat.toFixed(3)}°N ${w.lon.toFixed(3)}°E · depth to water below ground; down is deeper`;
-  $("#detail-chart").innerHTML = chart([{ name: "depth to water", color: "#265ca8", pts: depth, fill: true }], { invert: true });
+  $("#detail-chart").innerHTML = bandChart([{ name: "depth to water", color: "#265ca8", pts: depth }], { invert: true, unit: "m" });
   $("#detail-chart").setAttribute("aria-label", `Depth to water over ${hs.length} readings, from ${depth[0][1]} m to ${depth.at(-1)[1]} m`);
   const kv = [["Readings", hs.length], ["Aquifer", w.aquifer], ["Well type", w.type], ["Well depth", w.well_depth_m != null ? `${w.well_depth_m} m` : "–"],
     ["Specific yield", w.sy ?? "–"], ["Normal annual rain", w.rain_normal_annual_mm != null ? `${w.rain_normal_annual_mm.toLocaleString()} mm` : "–"],
     ["Mean change per reading", fmtM(mObs)], ["Rain-expected", fmtM(mExp)], ["Unexplained", fmtM(mObs - mExp)]];
-  if (S.mode === "scenario" && S.scenByWell?.has(i)) {
-    const r = S.scenByWell.get(i);
-    kv.push(["Scenario change", fmtM(r.p)], ["Recorded change", fmtM(S.scen.idx.observed[r.i])], ["Depth after scenario", `${(S.scen.idx.depth_before[r.i] + r.p).toFixed(2)} m`]);
-  }
   $("#detail-kv").innerHTML = kv.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
   openDetail();
 }
@@ -523,18 +654,27 @@ function showDistrict(id) {
   if (!rec) { $("#detail-sub").textContent = `${f.properties.state} · not enough monitored wells`; $("#detail-chart").innerHTML = ""; $("#detail-kv").innerHTML = ""; openDetail(); return; }
   const ys = Object.keys(rec).map(Number).sort();
   const pt = (k) => ys.map((y) => [Date.UTC(y, 6, 1), rec[y][k]]);
-  $("#detail-sub").textContent = `${f.properties.state} · mean change per reading, by year; positive means the water fell`;
-  $("#detail-chart").innerHTML = chart([
-    { name: "observed", color: "#b4441a", pts: pt(1) },
-    { name: "rain-expected", color: "#265ca8", pts: pt(2), dash: true }], { zero: true });
-  const all = ys.map((y) => rec[y][0]), mean = all.reduce((a, b) => a + b, 0) / all.length;
-  $("#detail-kv").innerHTML = [["Years with data", ys.length], ["Wells (latest year)", rec[ys.at(-1)][3]], ["Mean unexplained", fmtM(mean)]]
+  S.prDistrict = id;
+  const a = +$("#pr-from").value, b = +$("#pr-to").value, span = a === b ? `In ${a}` : `In ${a}–${b}`;
+  const held = ys.filter((y) => y >= a && y <= b), all = held.map((y) => rec[y][0]), mean = all.length ? all.reduce((x, y) => x + y, 0) / all.length : NaN;
+  $("#detail-sub").textContent = `${f.properties.state} · water fall per well reading, each year. ` + (Number.isNaN(mean) ? `No readings in ${a}–${b}.` :
+    mean > 0.02 ? `${span} it fell ${Math.abs(mean).toFixed(2)} m more per reading than rain explains.` :
+    mean < -0.02 ? `${span} it fell ${Math.abs(mean).toFixed(2)} m less per reading than rain explains.` : `${span} it moved about as rain explains.`);
+  $("#detail-chart").innerHTML = bandChart([
+    { name: "measured", color: "#b4441a", pts: pt(1) },
+    { name: "expected from rain", color: "#265ca8", pts: pt(2), dash: true }], { zero: true, unit: "m fall", yfmt: (v) => v.toFixed(2) });
+  $("#detail-kv").innerHTML = [["Years with data", ys.length], ["Wells (latest year)", rec[ys.at(-1)][3]], [`Fall beyond rain, ${a}–${b}`, Number.isNaN(mean) ? "–" : fmtM(mean)]]
     .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
   openDetail();
 }
 
 // ---------------------------------------------------------------- modes and layers
-const VIS = { replay: ["rain", "wells"], scenario: ["wells"], pressure: ["district-fill"] };
+const VIS = { replay: ["rain", "wells"], whatif: ["wells", "place"], forecast: ["wells", "place"], pressure: ["district-fill"] };
+const WELL_LEGEND = {
+  replay: ["Water level at the last well reading", ["rose 3 m", "no change", "fell 3 m"]],
+  whatif: ["Water level change from the extra rain", ["rises 30 cm", "none", "falls 30 cm"]],
+  forecast: ["Water level by the chosen year, if only rain mattered", ["rises 3 m", "no change", "falls 3 m"]],
+};
 function setMode(mode) {
   S.mode = mode;
   $$(".modes button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.mode === mode)));
@@ -542,15 +682,21 @@ function setMode(mode) {
   $("#detail").hidden = true;
   if (mode !== "replay") togglePlay(false);
   history.replaceState(null, "", `#${mode}`);
+  const usesPlace = mode === "whatif" || mode === "forecast";
+  $("#place").hidden = !usesPlace;
+  if (usesPlace) $(`[data-panel="${mode}"] .place-slot`).append($("#place"));
   $('[data-lg="rain"]').hidden = mode !== "replay";
   $('[data-lg="wells"]').hidden = mode === "pressure";
   $('[data-lg="pressure"]').hidden = mode !== "pressure";
-  $('[data-lg="ring"]').hidden = mode !== "scenario";
-  $("#lg-wells-title").textContent = mode === "scenario" ? "Predicted change in water level" : "Well level since previous reading";
+  $('[data-lg="place"]').hidden = !usesPlace;
+  if (WELL_LEGEND[mode]) {
+    $("#lg-wells-title").textContent = WELL_LEGEND[mode][0];
+    $("#lg-wells-labels").innerHTML = WELL_LEGEND[mode][1].map((t) => `<span>${t}</span>`).join("");
+  }
   applyLayers();
   if (mode === "replay") { S.curCamp = -2; setCampaign(lastCampaign(S.grid.t0 + S.day * DAY_MS)); }
-  if (mode === "scenario") (async () => { if (!S.scen) openScenarioYear(+$("#sc-year").value); await runScenario(); })()
-    .catch((e) => { loading(false); $("#sc-note").textContent = `The model could not load: ${e.message}`; });
+  if (mode === "whatif") { if (wiPaint && wiKey) wiPaint(); else paintWells(() => NaN); }
+  if (mode === "forecast") runForecast();
   if (mode === "pressure") renderPressure();
 }
 function vis(id, on) { if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", on ? "visible" : "none"); }
@@ -564,26 +710,29 @@ function applyLayers() {
   vis("state-labels", $("#ly-labels").checked);
   vis("district-fill", m.includes("district-fill"));
   vis("wells", $("#ly-wells").checked && m.includes("wells"));
+  vis("place-fill", m.includes("place"));
+  vis("place-line", m.includes("place"));
 }
 
 // ---------------------------------------------------------------- boot
 map.on("load", async () => {
   try {
     loading(true, "Loading data");
-    const [grid, national, wells, camps, india, districts, rivers, dams, pressure, scenIndex, meta] = await Promise.all([
+    const [grid, national, wells, camps, india, districts, rivers, dams, pressure, towns] = await Promise.all([
       getJSON("rain/grid.json"), getJSON("rain/national.json"), getJSON("wells.json"), getJSON("campaigns.json"),
       getJSON("india.geojson"), getJSON("districts.geojson"), getJSON("rivers.geojson"), getJSON("dams.geojson"),
-      getJSON("pressure.json"), getJSON("scenario/index.json"), getJSON("sim_meta.json")]);
+      getJSON("pressure.json"), getJSON("places.json").catch(() => [])]);
 
     grid.t0 = Date.parse(grid.first_day + "T00:00:00Z");
     grid.days = national.length;
-    Object.assign(S, { grid, national, wells, camps, pressure, scenIndex, meta, distFeatures: districts.features });
+    Object.assign(S, { grid, national, wells, camps, pressure, distFeatures: districts.features });
     S.campMs = camps.map((c) => Date.parse(c.date + "T00:00:00Z"));
+    wells.forEach((w, i) => S.wellIx.set(w.id, i));
+    buildSearch(towns);
     S.cellAt = new Int32Array(grid.lat.length * grid.lon.length).fill(-1);
     grid.lat_idx.forEach((li, c) => (S.cellAt[li * grid.lon.length + grid.lon_idx[c]] = c));
     S.obsByCamp = camps.map(() => new Float32Array(wells.length).fill(NaN));
-    S.depthByCamp = camps.map(() => new Float32Array(wells.length).fill(NaN));
-    wells.forEach((w, i) => w.h.forEach(([c, dep, d]) => { S.obsByCamp[c][i] = d; S.depthByCamp[c][i] = dep; }));
+    wells.forEach((w, i) => w.h.forEach(([c, , d]) => { S.obsByCamp[c][i] = d; }));
     rainSmall.width = grid.lon.length; rainSmall.height = grid.lat.length;
     rainCanvas.width = grid.lon.length * UPSCALE; rainCanvas.height = grid.lat.length * UPSCALE;
     $("#day").max = grid.days - 1;
@@ -596,7 +745,8 @@ map.on("load", async () => {
     map.addSource("states", { type: "geojson", data: stateLabels(districts) });
     map.addSource("rivers", { type: "geojson", data: rivers, attribution: "Rivers: HydroSHEDS HydroRIVERS" });
     map.addSource("dams", { type: "geojson", data: dams, attribution: "Dams: GeoDAR v1.1 (CC BY 4.0)" });
-    map.addSource("wells", { type: "geojson", data: { type: "FeatureCollection", features: [] }, attribution: "Wells: CGWB via figshare (CC BY 4.0) · Rain: IMD" });
+    map.addSource("place", { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+    map.addSource("wells", { type: "geojson", data: { type: "FeatureCollection", features: [] }, attribution: "Wells: CGWB via figshare (CC BY 4.0) · Rain: IMD · Towns: GeoNames (CC BY 4.0)" });
     const h = 0.125;
     map.addSource("rain", { type: "canvas", canvas: rainCanvas, animate: false, coordinates: [
       [grid.lon[0] - h, grid.lat.at(-1) + h], [grid.lon.at(-1) + h, grid.lat.at(-1) + h],
@@ -630,6 +780,8 @@ map.on("load", async () => {
       "symbol-sort-key": ["-", 0, ["coalesce", ["get", "storage_mcm"], 0]],
       "icon-size": ["case", [">", ["coalesce", ["get", "storage_mcm"], 0], 0], ["interpolate", ["linear"], ["sqrt", ["get", "storage_mcm"]], 0, 0.55, 100, 1.3], 0.42] },
       paint: { "icon-opacity": ["interpolate", ["linear"], ["zoom"], 5.5, 0, 6.2, 0.9] } });
+    map.addLayer({ id: "place-fill", type: "fill", source: "place", layout: { visibility: "none" }, paint: { "fill-color": "#1d232b", "fill-opacity": 0.06 } });
+    map.addLayer({ id: "place-line", type: "line", source: "place", layout: { visibility: "none" }, paint: { "line-color": "#1d232b", "line-width": 1.6, "line-dasharray": [3, 2] } });
     map.addLayer({ id: "wells", type: "circle", source: "wells", paint: {
       "circle-radius": ["interpolate", ["linear"], ["zoom"],
         3.5, ["+", 1.4, ["*", 0.55, ["get", "a"]]],
@@ -637,24 +789,22 @@ map.on("load", async () => {
         10, ["+", 5, ["*", 1.6, ["get", "a"]]]],
       "circle-color": ["interpolate", ["linear"], ["get", "v"], -3, "#1d4e91", -1, "#5b93cf", 0, "#d9d2c3", 1, "#e0913a", 3, "#a83a14"],
       "circle-opacity": 0.95,
-      "circle-stroke-color": ["case", ["get", "ring"], "#1d232b", "#fffdf7"],
-      "circle-stroke-width": ["case", ["get", "ring"], 2, 0.7] } });
+      "circle-stroke-color": "#fffdf7", "circle-stroke-width": 0.7 } });
     map.addLayer({ id: "state-labels", type: "symbol", source: "states", layout: {
       "text-field": ["upcase", ["get", "name"]], "text-font": ["Open Sans Semibold"],
       "text-size": ["interpolate", ["linear"], ["zoom"], 4, 9, 7, 13], "text-letter-spacing": 0.14,
       "text-max-width": 7, "symbol-sort-key": ["-", 0, ["get", "area"]] },
       paint: { "text-color": "#7a7262", "text-halo-color": "#f7f3ea", "text-halo-width": 1.6 } });
 
-    // scenario controls
-    $("#sc-year").innerHTML = Object.keys(scenIndex.years).map((y) => `<option value="${y}">November ${y}</option>`).join("");
-    $("#sc-year").value = Object.keys(scenIndex.years).at(-1);
-    $("#sc-region").innerHTML += [...new Set(wells.map((w) => w.state))].sort().map((s) => `<option>${s}</option>`).join("");
-    // is the API behind this page? (python -m http.server has no /api; uvicorn does)
+    // hotspot year pickers
+    const prYears = [...new Set(Object.values(pressure).flatMap((r) => Object.keys(r).map(Number)))].sort((x, y) => x - y);
+    for (const id of ["#pr-from", "#pr-to"]) $(id).innerHTML = prYears.map((y) => `<option>${y}</option>`).join("");
+    $("#pr-from").value = 2015; $("#pr-to").value = prYears.at(-1);
+
+    // What if and Future need the API; a plain http.server has no /api
     S.api = await fetch("api/health").then((r) => r.ok && r.headers.get("content-type")?.includes("json")).catch(() => false);
-    $("#sc-engine").textContent = S.api ? "Model runs on the FastAPI service." : "Model runs in your browser.";
-    const rv = meta.response_valid || {};
-    if (rv["x1.2"]) $("#sc-note").textContent =
-      `On held-out readings, +20% rain moves the mean prediction by ${fmtM(rv["x1.2"].mean, 3)}, and ${(100 * rv["x1.2"].wrong_way).toFixed(1)}% of readings still move the wrong way. Read differences under a few centimetres as noise.`;
+    const today = new Date().toISOString().slice(0, 10);
+    $("#wi-start").value = today;
 
     map.setPadding(panelPad());
     addEventListener("resize", () => { map.setPadding(panelPad()); sizeFx(); buildTimeline(); });
@@ -663,9 +813,7 @@ map.on("load", async () => {
     buildTimeline();
     await setDay(dayOf("2019-08-01"));
     loading(false);
-    setMode(["replay", "scenario", "pressure"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "replay");
-    const idle = window.requestIdleCallback || ((f) => setTimeout(f, 1500));
-    if (!S.api) idle(() => warmScenario().catch(() => {}), { timeout: 4000 });
+    setMode(["replay", "whatif", "forecast", "pressure"].includes(location.hash.slice(1)) ? location.hash.slice(1) : "replay");
   } catch (e) {
     console.error(e);
     loading(true, `Could not load data: ${e.message}. Run build_ui_data.py and serve this folder over http.`);
@@ -685,15 +833,76 @@ $$(".jump .chip").forEach((b) => b.addEventListener("click", () => {
   setDay(dayOf(b.dataset.jump));
   map.flyTo({ center: [lng, lat], zoom: z, duration: REDUCED ? 0 : 1600 });
 }));
-let scT;
-$("#sc-rain").addEventListener("input", () => {
-  clearTimeout(scT); const v = +$("#sc-rain").value;
-  $("#sc-pct").textContent = `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v)}%`; scT = setTimeout(runScenario, 220);
+// search ("/" focuses it)
+$("#q").addEventListener("input", showSuggestions);
+$("#q").addEventListener("focus", () => { if ($("#q").value) { $("#q").select(); showSuggestions(); } });
+$("#q").addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { $("#q-list").hidden = true; $("#q").blur(); return; }
+  if ($("#q-list").hidden || !qItems.length) return;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault(); qSel = (qSel + (e.key === "ArrowDown" ? 1 : -1) + qItems.length) % qItems.length;
+    $$("#q-list li").forEach((li, i) => li.setAttribute("aria-selected", String(i === qSel)));
+    $("#q").setAttribute("aria-activedescendant", `q-o${qSel}`);
+  } else if (e.key === "Enter") { e.preventDefault(); goTo(qItems[qSel].e); }
 });
-$("#sc-region").addEventListener("change", runScenario);
-$("#sc-year").addEventListener("change", () => { openScenarioYear(+$("#sc-year").value); runScenario(); });
-$$(".presets .chip").forEach((b) => b.addEventListener("click", () => { $("#sc-rain").value = b.dataset.pct; runScenario(); }));
-["#pr-from", "#pr-to"].forEach((s) => $(s).addEventListener("input", renderPressure));
+$("#q-list").addEventListener("mousedown", (e) => { const li = e.target.closest("li[data-i]"); if (li) { e.preventDefault(); goTo(qItems[+li.dataset.i].e); } });
+$("#q").addEventListener("blur", () => setTimeout(() => ($("#q-list").hidden = true), 120));
+$("#pl-search").addEventListener("click", () => $("#q").focus());
+$("#pl-all").addEventListener("click", () => { setPlace({}, "All India"); map.flyTo({ center: [80.5, 22.5], zoom: 4.1, duration: REDUCED ? 0 : 1000 }); });
+$("#pl-radius").addEventListener("change", () => { const q = S.place.q; if (q.lat != null) setPlace({ ...q, radius_km: +$("#pl-radius").value }, `Within ${$("#pl-radius").value} km of ${q.lat.toFixed(2)}°N ${q.lon.toFixed(2)}°E`); });
+
+// what if
+const pctText = (v) => `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v)}%`;
+$("#wi-pct").addEventListener("input", () => ($("#wi-pct-out").textContent = pctText(+$("#wi-pct").value)));
+$("#wi-mm").addEventListener("input", () => ($("#wi-mm-out").textContent = `${$("#wi-mm").value} mm`));
+$$('input[name="wi-kind"]').forEach((r) => r.addEventListener("change", () => {
+  const k = $('input[name="wi-kind"]:checked').value;
+  $$("[data-kind]").forEach((f) => (f.hidden = f.dataset.kind !== k));
+}));
+function choose(group, chip) { $$(`${group} .chip`).forEach((c) => c.setAttribute("aria-checked", String(c === chip))); }
+$$("[data-when]").forEach((b) => b.addEventListener("click", () => {
+  $("#wi-start").value = b.dataset.when === "today" ? new Date().toISOString().slice(0, 10) : b.dataset.when;
+  $("#wi-days").value = b.dataset.days;
+  $$("[data-when]").forEach((c) => c.setAttribute("aria-pressed", String(c === b)));
+}));
+for (const id of ["#wi-start", "#wi-days"]) $(id).addEventListener("change", () => $$("[data-when]").forEach((c) => c.setAttribute("aria-pressed", "false")));
+$$("[data-amt]").forEach((b) => b.addEventListener("click", () => {
+  const [kind, v] = b.dataset.amt.split(":");
+  $(`input[name="wi-kind"][value="${kind}"]`).checked = true;
+  $$("[data-kind]").forEach((f) => (f.hidden = f.dataset.kind !== kind));
+  $(kind === "mm" ? "#wi-mm" : "#wi-pct").value = v;
+  $("#wi-mm-out").textContent = `${$("#wi-mm").value} mm`; $("#wi-pct-out").textContent = pctText(+$("#wi-pct").value);
+  choose('[data-panel="whatif"] .choice', b);
+}));
+for (const id of ["#wi-mm", "#wi-pct"]) $(id).addEventListener("input", () => choose('[data-panel="whatif"] .choice', null));
+$$('input[name="wi-kind"]').forEach((r) => r.addEventListener("change", () => choose('[data-panel="whatif"] .choice', null)));
+$("#wi-run").addEventListener("click", runWhatIf);
+
+// future
+let fcT;
+$("#fc-year").addEventListener("input", () => {
+  $("#fc-year-out").textContent = $("#fc-year").value;
+  clearTimeout(fcT); fcT = setTimeout(runForecast, 200);
+});
+$$("[data-rain]").forEach((b) => b.addEventListener("click", () => {
+  $("#fc-rain").value = b.dataset.rain; choose('[data-panel="forecast"] .choice', b); runForecast();
+}));
+for (const id of ["#fc-show-rain", "#fc-show-trend"]) $(id).addEventListener("change", () => fcLast && renderForecast(fcLast));
+$$("[data-years]").forEach((b) => b.addEventListener("click", () => {
+  [$("#pr-from").value, $("#pr-to").value] = b.dataset.years.split(",");
+  renderPressure();
+}));
+// From after To gets swapped
+for (const id of ["#pr-from", "#pr-to"]) $(id).addEventListener("change", () => {
+  const a = +$("#pr-from").value, b = +$("#pr-to").value;
+  if (a > b) { $("#pr-from").value = b; $("#pr-to").value = a; }
+  renderPressure();
+  if (!$("#detail").hidden && S.prDistrict != null) showDistrict(S.prDistrict);
+});
+$$("[data-show]").forEach((b) => b.addEventListener("click", () => {
+  prWorst = b.dataset.show === "worst";
+  $$("[data-show]").forEach((c) => c.setAttribute("aria-checked", String(c === b))); renderPressure();
+}));
 $("#pr-rank").addEventListener("click", (e) => { const li = e.target.closest("li"); if (li) focusDistrict(+li.dataset.id); });
 $("#pr-rank").addEventListener("keydown", (e) => { const li = e.target.closest("li"); if (li && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); focusDistrict(+li.dataset.id); } });
 function focusDistrict(id) {
@@ -704,9 +913,9 @@ function focusDistrict(id) {
 }
 $$(".layers input").forEach((i) => i.addEventListener("change", applyLayers));
 $("#detail-close").addEventListener("click", () => ($("#detail").hidden = true));
-$("#about-btn").addEventListener("click", () => $("#about").showModal());
 addEventListener("keydown", (e) => {
   if (e.target.matches("select, textarea, input")) return;   // the timeline input handles its own arrows
+  if (e.key === "/") { e.preventDefault(); $("#q").focus(); return; }
   if (e.code === "Space" && S.mode === "replay") { e.preventDefault(); togglePlay(); }
   if (S.mode === "replay" && (e.key === "ArrowRight" || e.key === "ArrowLeft"))
     setDay(S.day + (e.key === "ArrowRight" ? 1 : -1) * (e.shiftKey ? 30 : 1));
@@ -719,13 +928,25 @@ map.on("mousemove", "wells", (e) => {
   if (!f) { hover.remove(); map.getCanvas().style.cursor = ""; return; }
   map.getCanvas().style.cursor = "pointer";
   const w = S.wells[f.properties.i], st = f.properties;
-  const what = S.mode === "scenario" ? "predicted" : "since previous reading";
-  hover.setLngLat(e.lngLat).setHTML(`<div class="pop-t">${w.district}</div><div class="pop-s">${w.state} · ${w.type}</div>` +
-    `<div class="pop-v">${st.v > 0 ? "fell" : "rose"} ${Math.abs(st.v).toFixed(2)} m <span class="pop-s">${what}</span></div>`).addTo(map);
+  const v = st.r, line = S.mode === "whatif" ? `${Math.abs(v) < 0.0005 ? "no change" : `${v < 0 ? "rises" : "falls"} ${cm(v)}`} <span class="pop-s">from the extra rain</span>`
+    : S.mode === "forecast" ? `${level(v)} <span class="pop-s">by ${$("#fc-year").value}, rain only</span>`
+    : `${v > 0 ? "fell" : "rose"} ${Math.abs(v).toFixed(2)} m <span class="pop-s">since previous reading</span>`;
+  hover.setLngLat(e.lngLat).setHTML(`<div class="pop-t">${w.district}</div><div class="pop-s">${w.state} · ${w.type}</div><div class="pop-v">${line}</div>`).addTo(map);
 });
 map.on("mouseleave", "wells", () => { hover.remove(); map.getCanvas().style.cursor = ""; });
-map.on("click", "wells", (e) => { const f = e.features[0]; if (f) showWell(f.properties.i); });
-map.on("click", "district-fill", (e) => { if (S.mode === "pressure" && e.features[0]) showDistrict(e.features[0].id); });
+map.on("click", (e) => {
+  const well = map.getLayer("wells") && map.queryRenderedFeatures(e.point, { layers: ["wells"] })[0];
+  if (S.mode === "whatif" || S.mode === "forecast") {
+    if (map.queryRenderedFeatures(e.point, { layers: ["dams"] }).length) return;
+    if (well) { const w = S.wells[well.properties.i]; setPlace({ well: w.id }, `One well, ${w.district}, ${w.state}`); showWell(well.properties.i); return; }
+    const km = +$("#pl-radius").value, { lng, lat } = e.lngLat;
+    setPlace({ lat: +lat.toFixed(4), lon: +lng.toFixed(4), radius_km: km }, `Within ${km} km of ${lat.toFixed(2)}°N ${lng.toFixed(2)}°E`);
+    return;
+  }
+  if (well) { showWell(well.properties.i); return; }
+  const d = S.mode === "pressure" && map.queryRenderedFeatures(e.point, { layers: ["district-fill"] })[0];
+  if (d) showDistrict(d.id);
+});
 map.on("click", "dams", (e) => {
   const p = e.features[0].properties;
   new maplibregl.Popup({ closeButton: false, offset: 8 }).setLngLat(e.lngLat).setHTML(

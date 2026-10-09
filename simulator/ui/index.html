@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rain or Pumps Simulator</title>
-<meta name="description" content="Replay India's recorded rainfall, run rainfall scenarios through a groundwater model, and see where water levels fall faster than rain explains.">
+<meta name="description" content="Replay India's recorded rainfall, ask what changed rain would do to groundwater on any past or future date, forecast water levels years ahead, and see where they fall faster than rain explains.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,500;8..60,600;8..60,700&display=swap" rel="stylesheet">
@@ -19,23 +19,28 @@
     <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3c3.3 4.1 6 7.7 6 10.8a6 6 0 0 1-12 0C6 10.7 8.7 7.1 12 3z"/><path d="M4 21h16" class="mark-line"/></svg>
     <div>
       <h1>Rain or Pumps</h1>
-      <p class="sub">India's groundwater, rainfall and the gap between them &middot; 1998&ndash;2022</p>
+      <p class="sub">India's groundwater, rainfall and the gap between them &middot; recorded 1998&ndash;2022, forecast to 2045</p>
     </div>
   </div>
   <nav class="modes" role="tablist" aria-label="Mode">
     <button role="tab" aria-selected="true" data-mode="replay">
-Replay
+Past rain
     </button>
-    <button role="tab" aria-selected="false" data-mode="scenario">
-Scenario
+    <button role="tab" aria-selected="false" data-mode="whatif">
+What if it rains
+    </button>
+    <button role="tab" aria-selected="false" data-mode="forecast">
+Future
     </button>
     <button role="tab" aria-selected="false" data-mode="pressure">
-Pressure
+Pumping hotspots
     </button>
   </nav>
-  <button class="text-btn" id="about-btn" aria-haspopup="dialog">
-    About the data
-  </button>
+  <div class="gsearch" role="search">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+    <input id="q" type="search" autocomplete="off" spellcheck="false" placeholder="Search a city, town, district or state" aria-label="Search a place" aria-controls="q-list" aria-autocomplete="list" aria-expanded="false">
+    <ul id="q-list" class="suggest" role="listbox" hidden></ul>
+  </div>
 </header>
 
 <main class="stage">
@@ -55,17 +60,17 @@ Pressure
     <div class="lg" data-lg="wells">
       <span class="lg-title" id="lg-wells-title">Well level since previous reading</span>
       <div class="ramp ramp-delta" aria-hidden="true"></div>
-      <div class="ramp-labels mono"><span>rose 3 m</span><span>0</span><span>fell 3 m</span></div>
+      <div class="ramp-labels mono" id="lg-wells-labels"><span>rose 3 m</span><span>0</span><span>fell 3 m</span></div>
     </div>
     <div class="lg" data-lg="pressure" hidden>
-      <span class="lg-title">Fall beyond what rain explains</span>
+      <span class="lg-title">Water fall beyond what rain explains</span>
       <div class="ramp ramp-pressure" aria-hidden="true"></div>
-      <div class="ramp-labels mono"><span>&minus;0.5 m</span><span>0</span><span>+0.5 m</span></div>
+      <div class="ramp-labels mono"><span>better than rain</span><span>as expected</span><span>worse</span></div>
     </div>
     <div class="lg-keys">
       <span><i class="k-dam" aria-hidden="true"></i>Dam</span>
       <span><i class="k-river" aria-hidden="true"></i>River</span>
-      <span data-lg="ring" hidden><i class="k-ring" aria-hidden="true"></i>Within 2 m of surface</span>
+      <span data-lg="place" hidden><i class="k-place" aria-hidden="true"></i>Chosen place</span>
     </div>
   </div>
 
@@ -122,60 +127,150 @@ Pressure
       <p class="caption">Zoom in past the state level to watch the rain fall. Click a well for its history.</p>
     </section>
 
-    <!-- ===== SCENARIO ===== -->
-    <section class="mode-panel" data-panel="scenario" hidden>
-      <p class="eyebrow">Scenario</p>
-      <h2>What if the rain had been different?</h2>
-      <p class="lede">Change the two years of rain before a post-monsoon reading. The model re-predicts every well in your browser.</p>
+    <!-- ===== PLACE: shared by What if and Future ===== -->
+    <section class="place" id="place" hidden>
+      <p class="q"><span class="qn">1</span>Where?</p>
+      <p class="place-now"><span class="dot" aria-hidden="true"></span><span id="pl-now">All India</span><button class="text-btn small" id="pl-all" type="button">reset to All India</button></p>
+      <p class="hint"><button class="text-btn small" id="pl-search" type="button">Search a city or town</button> at the top, or click on the map. <select id="pl-radius" class="inline" aria-label="Area around the point"><option value="25">25 km</option><option value="50" selected>50 km</option><option value="100">100 km</option><option value="150">150 km</option><option value="200">200 km</option><option value="300">300 km</option></select> around the spot you click.</p>
+    </section>
 
+    <!-- ===== WHAT IF ===== -->
+    <section class="mode-panel" data-panel="whatif" hidden>
+      <p class="eyebrow">What if it rains</p>
+      <h2>What would extra rain do to the water underground?</h2>
+      <div class="place-slot"></div>
+
+      <p class="q"><span class="qn">2</span>When?</p>
       <div class="grid2">
-        <label class="field"><span>Reading</span><select id="sc-year"></select></label>
-        <label class="field"><span>Apply to</span><select id="sc-region"><option value="">All India</option></select></label>
+        <label class="field tight"><span>Starting</span><input type="date" id="wi-start" min="2000-01-01" max="2045-12-31"></label>
+        <label class="field tight"><span>For</span>
+          <select id="wi-days">
+            <option value="1" selected>one day</option>
+            <option value="7">one week</option>
+            <option value="30">one month</option>
+            <option value="122">four months</option>
+          </select>
+        </label>
+      </div>
+      <div class="chips" aria-label="Quick dates">
+        <button class="chip" data-when="today" data-days="1">Today</button>
+        <button class="chip" data-when="2019-06-01" data-days="122">2019 monsoon</button>
+        <button class="chip" data-when="2027-06-01" data-days="122">2027 monsoon</button>
       </div>
 
-      <div class="field">
-        <div class="field-head"><label for="sc-rain">Rain change</label><output id="sc-pct" class="mono pill">+0%</output></div>
-        <input type="range" id="sc-rain" class="rain-slider" min="-50" max="50" step="5" value="0">
-        <div class="ticks mono" aria-hidden="true"><span>&minus;50%</span><span>0</span><span>+50%</span></div>
+      <p class="q"><span class="qn">3</span>How much rain?</p>
+      <div class="chips choice" role="radiogroup" aria-label="How much rain">
+        <button class="chip" role="radio" data-amt="mm:15">+15 mm a day <small>moderate</small></button>
+        <button class="chip" role="radio" data-amt="mm:40" aria-checked="true">+40 mm a day <small>heavy</small></button>
+        <button class="chip" role="radio" data-amt="mm:100">+100 mm a day <small>very heavy</small></button>
+        <button class="chip" role="radio" data-amt="pct:15">15% more</button>
+        <button class="chip" role="radio" data-amt="pct:-20">20% less</button>
+        <button class="chip" role="radio" data-amt="pct:-100">No rain</button>
       </div>
-      <div class="presets">
-        <button class="chip" data-pct="-40">Severe drought</button>
-        <button class="chip" data-pct="-20">Weak monsoon</button>
-        <button class="chip" data-pct="0">As recorded</button>
-        <button class="chip" data-pct="20">Strong monsoon</button>
+      <details class="more">
+        <summary>Custom amount</summary>
+        <div class="seg" role="radiogroup" aria-label="Change the rain by">
+          <label><input type="radio" name="wi-kind" value="pct"> Percent</label>
+          <label><input type="radio" name="wi-kind" value="mm" checked> Extra mm a day</label>
+        </div>
+        <div class="field" data-kind="pct" hidden>
+          <div class="field-head"><label for="wi-pct">Rain change</label><output id="wi-pct-out" class="mono pill">+15%</output></div>
+          <input type="range" id="wi-pct" min="-100" max="200" step="5" value="15">
+        </div>
+        <div class="field" data-kind="mm">
+          <div class="field-head"><label for="wi-mm">Extra rain each day</label><output id="wi-mm-out" class="mono pill">40 mm</output></div>
+          <input type="range" id="wi-mm" min="5" max="250" step="5" value="40">
+        </div>
+      </details>
+
+      <button class="btn primary wide" id="wi-run">Show what happens</button>
+
+      <div class="result" id="wi-result" hidden>
+        <div class="big"><span class="arrow" id="wi-arrow" aria-hidden="true"></span><output id="wi-big" class="mono">&ndash;</output></div>
+        <p class="answer" id="wi-sub"></p>
+        <div id="wi-chart" class="chart" role="img"></div>
+        <p class="hint">Each dot is a well reading (15 Jan, May, Aug, Nov). The effect fades within two years.</p>
+        <details class="more">
+          <summary>Details</summary>
+          <dl class="kv" id="wi-kv"></dl>
+        </details>
+      </div>
+      <details class="more about-it">
+        <summary>How this works</summary>
+        <p>The model is re-run for every well reading the extra rain can reach, using the rain that actually fell around those days (or, for future dates, rain like each past year in turn, which gives the range). It knows the season: 40&nbsp;mm in a dry month counts for more than 40&nbsp;mm in the monsoon. Changes of a few centimetres are within the model's noise.</p>
+      </details>
+    </section>
+
+    <!-- ===== FUTURE ===== -->
+    <section class="mode-panel" data-panel="forecast" hidden>
+      <p class="eyebrow">Future</p>
+      <h2>Where is the water level heading?</h2>
+      <div class="place-slot"></div>
+
+      <p class="q"><span class="qn">2</span>Up to which year?</p>
+      <div class="field tight">
+        <div class="field-head"><span></span><output id="fc-year-out" class="mono pill">2030</output></div>
+        <input type="range" id="fc-year" min="2023" max="2045" step="1" value="2030" aria-label="Forecast up to year">
+        <div class="ticks mono" aria-hidden="true"><span>2023</span><span>reliable to 2027</span><span>2045</span></div>
+      </div>
+
+      <p class="q"><span class="qn">3</span>How much rain in the coming years?</p>
+      <input type="hidden" id="fc-rain" value="0">
+      <div class="chips choice" role="radiogroup" aria-label="Rain in the coming years">
+        <button class="chip" role="radio" data-rain="-20">20% drier</button>
+        <button class="chip" role="radio" data-rain="-10">10% drier</button>
+        <button class="chip" role="radio" data-rain="0" aria-checked="true">Like the past</button>
+        <button class="chip" role="radio" data-rain="10">10% wetter</button>
+        <button class="chip" role="radio" data-rain="20">20% wetter</button>
       </div>
 
       <div class="result">
-        <span class="k">Change in the water level, against recorded rain</span>
-        <div class="big"><span class="arrow" id="sc-arrow" aria-hidden="true"></span><output id="sc-diff" class="mono">&ndash;</output></div>
-        <span class="k" id="sc-diff-sub">mean over the wells the change applies to</span>
+        <p class="k" id="fc-k">Water level in November 2030, compared with November 2022</p>
+        <div class="two-answers">
+          <label class="ans ans-rain"><input type="checkbox" id="fc-show-rain" checked><span class="ans-k"><i class="sw sw-rain" aria-hidden="true"></i>If only rain mattered</span><output id="fc-big" class="mono">&ndash;</output></label>
+          <label class="ans ans-trend"><input type="checkbox" id="fc-show-trend" checked><span class="ans-k"><i class="sw sw-trend" aria-hidden="true"></i>If recent pumping continues</span><output id="fc-trend" class="mono">&ndash;</output></label>
+        </div>
+        <p class="answer" id="fc-sub"></p>
+        <div id="fc-chart" class="chart" role="img"></div>
+        <p class="hint">Shaded band: the range over different rain years. Hatched: further ahead than the model has been tested.</p>
       </div>
-
-      <div class="kpis two">
-        <div class="kpi"><span class="k">Mean predicted change</span><span class="v mono" id="sc-mean">&ndash;</span></div>
-        <div class="kpi"><span class="k">Wells falling &darr; rising &uarr;</span><span class="v mono" id="sc-split">&ndash;</span></div>
-        <div class="kpi warn wide"><span class="k">Water table within 2 m of the surface (CGWB waterlogged band), change against recorded rain</span><span class="v mono" id="sc-wl">&ndash;</span></div>
-      </div>
-      <p class="note"><span id="sc-note"></span> <span id="sc-engine"></span></p>
+      <details class="more about-it">
+        <summary>How reliable is this?</summary>
+        <p>The water level is stepped forward from the last reading in November 2022, one quarter at a time, with rain like each past year in turn. Tested on 2015&ndash;2022, this beat &ldquo;assume no change&rdquo; up to 5 years ahead, but not beyond.</p>
+        <p>&ldquo;If recent pumping continues&rdquo; adds each district's 2015&ndash;22 fall that rain did not explain (mostly pumping, also recharge works and canals). It is an assumption, not a prediction.</p>
+      </details>
     </section>
 
-    <!-- ===== PRESSURE ===== -->
+    <!-- ===== PUMPING HOTSPOTS ===== -->
     <section class="mode-panel" data-panel="pressure" hidden>
-      <p class="eyebrow">Pressure</p>
-      <h2>Where rain does not explain the fall</h2>
-      <p class="lede">Observed change minus the change the model expects from rain alone, per district. Warm means the water fell further than rain accounts for: the extraction signal.</p>
+      <p class="eyebrow">Pumping hotspots</p>
+      <h2>Where did water fall more than rain explains?</h2>
+      <p class="lede">Orange districts lost more water than the rain there accounts for: the likely sign of pumping. Blue districts did better than rain alone.</p>
 
-      <div class="field">
-        <div class="field-head"><span>Years</span><output id="pr-out" class="mono pill">2015&ndash;2022</output></div>
-        <div class="dual">
-          <input type="range" id="pr-from" min="2015" max="2022" value="2015" aria-label="From year">
-          <input type="range" id="pr-to" min="2015" max="2022" value="2022" aria-label="To year">
-        </div>
+      <p class="q">Which years?</p>
+      <div class="grid2">
+        <label class="field tight"><span>From</span><select id="pr-from"></select></label>
+        <label class="field tight"><span>To</span><select id="pr-to"></select></label>
+      </div>
+      <div class="chips choice" role="radiogroup" aria-label="Years">
+        <button class="chip" role="radio" data-years="2015,2022" aria-checked="true">All, 2015&ndash;22</button>
+        <button class="chip" role="radio" data-years="2015,2018">Dry run, 2015&ndash;18</button>
+        <button class="chip" role="radio" data-years="2019,2022">Wet run, 2019&ndash;22</button>
+      </div>
+      <p class="warn-note" id="pr-warn" hidden>Before 2015 the model learned from these years, so the gaps it shows there come out smaller than they really are. Compare those years with each other, not with 2015 onwards.</p>
+      <p class="q">Show</p>
+      <div class="chips choice" role="radiogroup" aria-label="Which end of the ranking">
+        <button class="chip" role="radio" data-show="worst" aria-checked="true">Falling most</button>
+        <button class="chip" role="radio" data-show="best">Holding up best</button>
       </div>
 
-      <p class="card-title">Highest unexplained fall</p>
+      <p class="card-title" id="pr-title">Falling most beyond rain, 2015&ndash;2022</p>
       <ol class="rank" id="pr-rank"></ol>
-      <p class="note">A ranking, not a measurement of pumping. Held-out years only (2015&ndash;2022): the model was fitted on 2000&ndash;2014, so residuals there are biased towards zero. A district needs at least two monitored wells in a year to count.</p>
+      <p class="hint">Metres per well reading, beyond what the rain there explains. Click a district for its story.</p>
+      <details class="more about-it">
+        <summary>How to read this</summary>
+        <p>For each district: the change actually measured in its wells, minus the change the model expects from rain alone. It points to where to look; it does not measure pumping. Only 2015&ndash;2022 is shown because the model learned from the years before. A district needs at least two monitored wells.</p>
+      </details>
     </section>
 
     <!-- ===== SELECTION ===== -->
@@ -206,22 +301,6 @@ Pressure
   </aside>
 </main>
 
-<dialog id="about" aria-labelledby="about-title">
-  <p class="eyebrow">About</p>
-  <h2 id="about-title">What you are looking at</h2>
-  <p><b>Replay</b> draws the India Meteorological Department's 0.25&deg; daily rainfall grid (Pai et al. 2014), every day 1998&ndash;2022. The 2,759 CGWB monitoring wells are coloured by how far their water level moved at the last quarterly reading.</p>
-  <p><b>Scenario</b> runs the simulator model, a bidirectional LSTM, live in your browser. It reads the 104 weeks of rain before a reading, plus fixed facts about the well: depth, specific yield, aquifer and normal rainfall. It predicts the change in water level, and never sees a past water level, a year or a location. The rain slider rescales those 104 weeks and runs it again.</p>
-  <p><b>Pressure</b> is the project's question: where the water fell further than the rain explains. That gap is a proxy for extraction, not a measurement of it.</p>
-  <h3>Limits, stated plainly</h3>
-  <ul>
-    <li>The model's rain response is small: centimetres to tens of centimetres across the whole slider. Groundwater moves slowly, and pumping dominates in many districts.</li>
-    <li>It was trained with a penalty so that more rain cannot predict a larger fall. The penalty is soft, so the share of wells that still move the wrong way is shown under the scenario.</li>
-    <li>Dams are from GeoDAR v1.1: about 1,300 in India, a fifth of the national register, shown for context. Nothing here models reservoirs or floods.</li>
-    <li>Rivers are HydroSHEDS HydroRIVERS reaches with a mean flow above 15 m&sup3;/s. Relief is from AWS Terrain Tiles.</li>
-    <li>Boundaries are the post-2020 district outlines, with India as depicted by the Survey of India.</li>
-  </ul>
-  <form method="dialog"><button class="btn primary">Close</button></form>
-</dialog>
 
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="app.js" type="module"></script>

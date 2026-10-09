@@ -10,7 +10,7 @@
     "weeks": 104,
     "cv": false,
     "no_baselines": false,
-    "out": "/home/claude/proj/data/training/results.json"
+    "out": "data/training/results.json"
   },
   "rows": 216455,
   "baselines": {
