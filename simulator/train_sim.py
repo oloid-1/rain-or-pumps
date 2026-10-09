@@ -25,8 +25,7 @@ Why it differs from models/train_bilstm.py, which stays as it is:
 3. Exports what a browser needs: ONNX weights plus every scaling statistic and
    category level, so the UI can run the model live.
 
-    python simulator/train_sim.py --data bilstm-data/out          6 channels
-    python simulator/train_sim.py --data data/training            main data, rain only
+    python simulator/train_sim.py                                 6 channels, data/training
     python simulator/train_sim.py --mono-weight 0                 same model, no penalty (ablation)
 """
 
@@ -47,6 +46,7 @@ sys.path.insert(0, str(REPO / "models"))
 from bilstm import RainBiLSTM  # noqa: E402
 from train_bilstm import load, channel_stats, scale, LOG_CHANNELS, SIGNED_LOG_CHANNELS  # noqa: E402
 from train_transformer import metrics, TARGET, SEED  # noqa: E402
+from build_training_data import OUT_DIR  # noqa: E402
 from transformer import count_params  # noqa: E402
 
 STATIC_NUMERIC = ["well_depth_m", "sy", "days_since_prev", "rain_normal_annual_mm",
@@ -55,20 +55,25 @@ STATIC_CATEGORICAL = ["season", "aquifer", "well_type", "transition"]
 
 
 # --------------------------------------------------------------------------
-def encode_static(tab, train_mask):
-    """Standardise the static numerics and index the categoricals, TRAIN rows
-    only, and return the statistics so the browser can repeat it exactly."""
+def encode_static(tab, train_mask, stats=None):
+    """Standardise the static numerics and index the categoricals with statistics
+    from TRAIN rows, or with `stats` from a trained model's sim_meta.json, and
+    return the statistics so the browser can repeat it exactly."""
     X = tab[STATIC_NUMERIC].to_numpy("float32")
-    med = np.nanmedian(X[train_mask], axis=0)
-    X = np.where(np.isfinite(X), X, med)
-    mu, sd = X[train_mask].mean(0), X[train_mask].std(0)
-    sd[sd < 1e-6] = 1.0
+    if stats:
+        med, mu, sd = (np.asarray(stats[k], "float32") for k in ("median", "mean", "std"))
+        X = np.where(np.isfinite(X), X, med)
+    else:
+        med = np.nanmedian(X[train_mask], axis=0)
+        X = np.where(np.isfinite(X), X, med)
+        mu, sd = X[train_mask].mean(0), X[train_mask].std(0)
+        sd[sd < 1e-6] = 1.0
     Xn = ((X - mu) / sd).astype("float32")
 
     codes, levels_out = [], {}
     for c in STATIC_CATEGORICAL:
         v = tab[c].astype(str).fillna("unknown")
-        levels = sorted(v[train_mask].unique())
+        levels = stats["categorical"][c] if stats else sorted(v[train_mask].unique())
         idx = pd.Index(levels).get_indexer(v)
         codes.append(np.where(idx < 0, len(levels), idx).astype("int64"))
         levels_out[c] = levels
@@ -209,7 +214,7 @@ def export(m, S, Xn, C, channels, cs, tstats, valid, response, out):
 # --------------------------------------------------------------------------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--data", default=str(REPO / "bilstm-data" / "out"))
+    ap.add_argument("--data", default=str(OUT_DIR))
     ap.add_argument("--out", default=str(HERE / "out" / "run"))
     ap.add_argument("--epochs", type=int, default=25)
     ap.add_argument("--bs", type=int, default=512)

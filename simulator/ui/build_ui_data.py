@@ -6,7 +6,7 @@ simulator run.
 
 Reads
     data/derived/rain_cube.npz        daily IMD rain, every land cell, 1998-2022
-    bilstm-data/out/                  tabular rows + 6-channel sequences
+    data/training/                    tabular rows + 6-channel sequences
     <run>/sim.pt, <run>/sim.onnx, <run>/sim_meta.json
 
 Writes simulator/ui/data/
@@ -40,8 +40,9 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path[:0] = [str(REPO / "simulator"), str(REPO / "models")]
 from bilstm import RainBiLSTM  # noqa: E402
-from train_bilstm import load, channel_stats, scale  # noqa: E402
+from train_bilstm import load, scale  # noqa: E402
 from train_sim import encode_static, predict, STATIC_NUMERIC  # noqa: E402
+from build_training_data import OUT_DIR, RAIN_CUBE  # noqa: E402
 
 OUT = HERE / "data"
 RAIN_Q = 33.0               # log1p(2,000 mm) * 33 = 251, so a day up to ~2 m of rain fits a byte
@@ -50,7 +51,7 @@ SCENARIO_SEASON = "NOV"     # after the monsoon, where recharge shows
 
 
 def export_rain():
-    z = np.load(REPO / "data" / "derived" / "rain_cube.npz")
+    z = np.load(RAIN_CUBE)
     rain, days = z["rain"], z["days"].astype("datetime64[D]")
     d = OUT / "rain"
     d.mkdir(parents=True, exist_ok=True)
@@ -81,7 +82,7 @@ def place_wells(tab):
     from shapely.geometry import shape, Point
     from shapely.strtree import STRtree
     from shapely.validation import make_valid
-    feats = json.loads((REPO / "data_cleaning" / "reference" / "districts.geojson").read_text())["features"]
+    feats = json.loads((REPO / "data" / "reference" / "districts.geojson").read_text())["features"]
     polys = [make_valid(shape(f["geometry"])) for f in feats]
     tree = STRtree(polys)
     xy = tab[["well_uid", "lat", "lon"]].drop_duplicates("well_uid")
@@ -102,7 +103,7 @@ def place_wells(tab):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", default=str(REPO / "simulator" / "artifacts"))
-    ap.add_argument("--data", default=str(REPO / "bilstm-data" / "out"))
+    ap.add_argument("--data", default=str(OUT_DIR))
     ap.add_argument("--skip-rain", action="store_true")
     a = ap.parse_args()
     run = Path(a.run)
@@ -115,8 +116,9 @@ def main():
     meta = json.loads((run / "sim_meta.json").read_text())
     assert meta["channels"] == channels, (meta["channels"], channels)
     mk = (tab.split == "train").to_numpy()
-    S = scale(x, channels, channel_stats(x, channels, mk))
-    Xn, C, sizes, _ = encode_static(tab, mk)
+    # the model's own scaling, so a sample (DATA_DIR=data/sample) is scaled exactly as in training
+    S = scale(x, channels, {c: (v["mean"], v["std"]) for c, v in meta["channel_scaling"].items()})
+    Xn, C, sizes, _ = encode_static(tab, mk, meta["static"])
 
     m = RainBiLSTM(len(STATIC_NUMERIC), sizes, len(channels))
     m.load_state_dict(torch.load(run / "sim.pt", map_location="cpu"))

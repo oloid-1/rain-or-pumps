@@ -147,7 +147,7 @@ runs stopped between epochs 10 and 20 of 25, and the fold runs between 10 and 20
 | run | epochs run | best epoch | config file |
 |---|---|---|---|
 | BiLSTM, 6 channels | 19 | 14 | `models/artifacts/bilstm_results.json` |
-| BiLSTM, main data, rain only | 14 | 9 | `models/artifacts/bilstm_main_results.json` |
+| BiLSTM, main data, rain only | 14 | 9 | not kept |
 | Simulator, 6 channels, penalty on | 17 | 12 | `simulator/artifacts/sim_6ch_results.json` |
 | District folds (all models, 20-epoch cap) | 10–20 per fold; some ran the full 20 | — | `*_results_cv.json`, epochs from the Kaggle logs |
 

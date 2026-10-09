@@ -39,7 +39,7 @@ from train_transformer import (encode, scale_seq, metrics, run_nn, baselines,
 from random_split import make_random_split
 
 REPO = Path(__file__).resolve().parents[1]
-T = REPO / "data" / "training"
+from build_training_data import OUT_DIR as T  # noqa: E402
 OUT = T / "random_split_results.json"
 SEED = 42
 

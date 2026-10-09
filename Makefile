@@ -1,82 +1,74 @@
 # Rain or Pumps? - common tasks.
-#   make data     build the training table (no download needed)
-#   make train    baselines + transformer
-#   make report   attention figure and district residuals
-#   make all      the three above, in order
+#
+# Quick start on the bundled sample (one state, runs in a few minutes):
+#   make sample-app        build everything from data/sample/ and serve it at http://localhost:8000
+#
+# Full data (fetch it first, see data/README.md):
+#   make sequences ui-data forecast api
+#
+# Any target runs on the sample with DATA_DIR=data/sample, e.g. DATA_DIR=data/sample make sequences
 PY ?= python3
 
-.PHONY: all data cube train cv report bilstm-data bilstm geo places sim ui-data forecast ui api test-api test fetch clean-built
+.PHONY: data sequences cube train cv report bilstm sim geo places ui-data forecast api test sample sample-app fetch clean-built
 
-all: data train report
-
-## build the training table from the packed rainfall cube
+## the training table and the 1-channel rain sequence (data/training/)
 data:
 	$(PY) models/build_training_data.py
 
-## rebuild the packed cube from the IMD NetCDFs (only after `make fetch`)
+## the training table plus the BiLSTM's 6-channel sequence (runs `data` itself)
+sequences:
+	$(PY) models/build_sequences.py
+
+## rebuild the packed rain cube from the IMD NetCDFs (only after `make fetch`)
 cube:
 	$(PY) scripts/build_rain_cube.py
 
-## baselines, transformer and the sequence-only ablation
+## comparison models: baselines + transformer, district folds, attention figure, BiLSTM
 train:
 	$(PY) models/train_transformer.py --epochs 25
-
-## five district folds: does it transfer to districts it has never seen
 cv:
 	$(PY) models/train_transformer.py --cv --epochs 20
-
-## attention figure and the district residual table
 report:
 	$(PY) models/attention_report.py
-
-## the BiLSTM copy of the training data (bilstm-data/out/)
-bilstm-data:
-	$(PY) bilstm-data/build_bilstm_data.py
-
-## BiLSTM training, locally; the full run goes to Kaggle with `python kaggle/push.py`
 bilstm:
 	cd models && $(PY) train_bilstm.py --epochs 25
 
-## simulator: the town list behind the search box (needs data/geo/raw/geonames/cities1000.zip)
+## the chosen model, trained locally (the reported run is on Kaggle: python kaggle/push.py --script run_sim.py)
+sim:
+	$(PY) simulator/train_sim.py --out simulator/out/sim_6ch
+
+## map layers and the town list for search (need downloads in data/geo/raw/, see simulator/README.md)
+geo:
+	$(PY) simulator/geo/build_geo.py
 places:
 	$(PY) simulator/geo/build_places.py
 
-## simulator: map layers (needs data/geo/raw/, see simulator/README.md)
-geo:
-	$(PY) simulator/geo/build_geo.py
-
-## simulator: train locally (the reported run is on Kaggle: python kaggle/push.py --script run_sim.py)
-sim:
-	$(PY) simulator/train_sim.py --data bilstm-data/out --out simulator/out/sim_6ch
-
-## simulator: everything the UI reads, from a trained run
+## everything the UI reads, then the forecast table (~18 min on CPU for the full data)
 ui-data:
 	$(PY) simulator/ui/build_ui_data.py --run simulator/artifacts
-
-## simulator: the forecast table, its backtest and the What if engine's inputs (after ui-data; ~18 min on CPU)
 forecast:
 	$(PY) simulator/forecast/build_forecast.py
 
-## simulator: the UI as plain files at http://localhost:8765 (Replay and Pressure only; What if and Forecast need `make api`)
-ui:
-	$(PY) -m http.server 8765 -d simulator/ui
-
-## simulator: the FastAPI service, with the UI at http://localhost:8000 and docs at /docs
+## the API with the UI at http://localhost:8000 (docs at /docs)
 api:
 	$(PY) -m uvicorn app:app --app-dir simulator/api --port 8000
 
-## simulator: the API's tests
-test-api:
+test:
 	$(PY) -m pytest simulator/api -q
 
-## the pipeline's own test suite
-test:
-	cd pipeline && pytest -q
+## cut data/sample/ out of the full data (one state), and build + serve the app from it
+sample:
+	$(PY) scripts/make_sample.py
+sample-app:
+	DATA_DIR=data/sample $(PY) models/build_sequences.py
+	DATA_DIR=data/sample $(PY) simulator/ui/build_ui_data.py --run simulator/artifacts
+	DATA_DIR=data/sample $(PY) simulator/forecast/build_forecast.py
+	$(PY) -m uvicorn app:app --app-dir simulator/api --port 8000
 
-## download the raw inputs (only needed for the full 32,299-well rebuild)
+## download the raw inputs
 fetch:
 	$(PY) scripts/fetch_data.py --all
 
 ## remove everything that can be rebuilt
 clean-built:
-	rm -rf data/training data/processed data_cleaning/data bilstm-data/out bilstm-data/kaggle_stage simulator/out
+	rm -rf data/training data/sample/training data/kaggle data/kaggle_stage simulator/out

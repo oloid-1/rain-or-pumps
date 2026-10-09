@@ -8,7 +8,7 @@ Reads (fetched once into data/geo/raw/, not tracked):
         https://data.hydrosheds.org/file/HydroRIVERS/HydroRIVERS_v10_as_shp.zip
     GeoDAR_v10_v11/GeoDAR_v11_dams.csv   georeferenced dams, CC BY 4.0, zenodo 6163413
         https://zenodo.org/records/6163413
-    data_cleaning/reference/districts.geojson   724 post-2020 districts, official boundary
+    data/reference/districts.geojson            724 post-2020 districts, official boundary
 
 Writes simulator/ui/data/
     districts.geojson   simplified outlines, name + state
@@ -37,7 +37,7 @@ from shapely.validation import make_valid
 REPO = Path(__file__).resolve().parents[2]
 RAW = REPO / "data" / "geo" / "raw"
 OUT = REPO / "simulator" / "ui" / "data"
-DISTRICTS = REPO / "data_cleaning" / "reference" / "districts.geojson"
+DISTRICTS = REPO / "data" / "reference" / "districts.geojson"
 
 MIN_DISCHARGE_CMS = 15     # long-term mean flow; keeps the named-river network, drops rills
 RIVER_TOL = 0.01           # degrees, ~1 km: invisible at the zooms the rivers are drawn at
@@ -45,9 +45,9 @@ DISTRICT_TOL = 0.005
 ROUND = 4                  # ~10 m
 
 
-def rnd(geom):
+def rnd(geom, digits=ROUND):
     def r(c):
-        return [round(c[0], ROUND), round(c[1], ROUND)]
+        return [round(c[0], digits), round(c[1], digits)]
     g = mapping(geom)
 
     def walk(x):
@@ -87,8 +87,7 @@ def main():
     # ---- rivers
     r = shapefile.Reader(str(RAW / "HydroRIVERS_v10_as_shp" / "HydroRIVERS_v10_as"))
     names = [f[0] for f in r.fields[1:]]
-    i_dis, i_ord, i_main, i_up = (names.index(k) for k in
-                                  ("DIS_AV_CMS", "ORD_FLOW", "MAIN_RIV", "UPLAND_SKM"))
+    i_dis = names.index("DIS_AV_CMS")
     bx0, by0, bx1, by1 = india.bounds
     rivers = []
     for sr in r.iterShapeRecords():
@@ -102,9 +101,8 @@ def main():
         if not inside.intersects(line):
             continue
         rivers.append({"type": "Feature",
-                       "properties": {"dis": round(rec[i_dis], 1), "ord": rec[i_ord],
-                                      "main": rec[i_main], "up_km2": round(rec[i_up])},
-                       "geometry": rnd(line.simplify(RIVER_TOL))})
+                       "properties": {"dis": round(rec[i_dis], 1)},     # the map styles by flow only
+                       "geometry": rnd(line.simplify(RIVER_TOL), 3)})    # ~100 m, finer than RIVER_TOL
     dump("rivers.geojson", rivers)
 
     # ---- dams

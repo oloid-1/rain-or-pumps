@@ -3,7 +3,8 @@ Tests for the simulator API.
 
     pytest simulator/api -q
 
-Needs the built UI data (python simulator/ui/build_ui_data.py).
+Needs the built UI data (python simulator/ui/build_ui_data.py). Works on the full
+data or on the sample (DATA_DIR=data/sample): places come from whatever is built.
 """
 
 import numpy as np
@@ -13,6 +14,8 @@ from fastapi.testclient import TestClient
 from app import app, store, HELD_OUT
 
 client = TestClient(app)
+STATE = store().states[0]                                   # a state that has wells
+DISTRICT = store().wells[0]["district"]
 
 
 def scen(**kw):
@@ -23,7 +26,7 @@ def scen(**kw):
 
 def test_health():
     r = client.get("/api/health").json()
-    assert r["status"] == "ok" and r["wells"] == 2759
+    assert r["status"] == "ok" and r["wells"] == len(store().wells) > 0
     assert r["scenario_years"] == list(HELD_OUT)
 
 
@@ -54,9 +57,9 @@ def test_more_rain_raises_the_water_level():
 
 def test_state_filter_limits_the_change_to_that_state():
     s = store()
-    out = client.post("/api/scenario", json={"year": 2022, "rain_pct": -40, "state": "Kerala"}).json()
+    out = client.post("/api/scenario", json={"year": 2022, "rain_pct": -40, "state": STATE}).json()
     assert out["summary"]["wells"] == len(out["wells"]) > 0
-    assert {s.wells[w["index"]]["state"] for w in out["wells"]} == {"Kerala"}
+    assert {s.wells[w["index"]]["state"] for w in out["wells"]} == {STATE}
 
 
 @pytest.mark.parametrize("body", [{"rain_pct": 80}, {"rain_pct": -51}, {"year": 2010}, {"year": 2023},
@@ -79,8 +82,8 @@ def test_pressure_refuses_training_years_unless_asked():
 
 
 def test_wells_and_districts():
-    w = client.get("/api/wells", params={"state": "Kerala"}).json()
-    assert w["count"] > 0 and all(x["state"] == "Kerala" for x in w["wells"])
+    w = client.get("/api/wells", params={"state": STATE}).json()
+    assert w["count"] > 0 and all(x["state"] == STATE for x in w["wells"])
     one = client.get(f"/api/wells/{w['wells'][0]['id']}").json()
     assert one["history"] and {"depth_m", "change_m", "rain_expected_change_m", "held_out"} <= one["history"][0].keys()
     assert client.get("/api/wells/nope").status_code == 404
@@ -92,7 +95,7 @@ def test_wells_and_districts():
 
 def test_rain():
     r = client.get("/api/rain/2005-07-26", params={"cells": True}).json()
-    assert r["max_mm"] > 200 and r["cells"] and len(r["cells"][0]) == 3
+    assert r["max_mm"] > 50 and r["cells"] and len(r["cells"][0]) == 3        # monsoon day
     assert client.get("/api/rain/1990-01-01").status_code == 422
 
 
@@ -105,7 +108,7 @@ def test_ui_is_served():
 # these also need python simulator/forecast/build_forecast.py
 
 def test_forecast_bands_are_ordered_and_start_at_the_last_reading():
-    r = client.get("/api/forecast", params={"state": "Punjab", "to_year": 2030}).json()
+    r = client.get("/api/forecast", params={"state": STATE, "to_year": 2030}).json()
     f = r["forecast"]
     assert f[0]["date"] == "2023-01-15" and f[-1]["date"] == "2030-11-15"
     for k in ("rain_only", "rain_plus_trend"):
@@ -120,15 +123,15 @@ def test_forecast_less_rain_means_deeper_water():
 
 
 def test_simulate_past_monsoon_plus_15_percent_raises_the_water():
-    r = client.post("/api/simulate", json={"state": "Kerala", "start": "2019-06-01", "end": "2019-09-30",
+    r = client.post("/api/simulate", json={"state": STATE, "start": "2019-06-01", "end": "2019-09-30",
                                            "rain_pct": 15}).json()
     assert r["past"] and r["members"] == 1
     assert r["peak"]["depth_effect_m"]["p50"] < 0         # negative: water table higher
 
 
-def test_simulate_rain_today_in_bengaluru_is_a_future_ensemble():
-    r = client.post("/api/simulate", json={"district": "Bengaluru", "start": "2026-10-09", "add_mm": 40}).json()
-    assert "Bengaluru Urban" in r["place"] and not r["past"] and r["members"] > 1
+def test_simulate_rain_today_is_a_future_ensemble():
+    r = client.post("/api/simulate", json={"district": DISTRICT, "start": "2026-10-09", "add_mm": 40}).json()
+    assert DISTRICT in r["place"] and not r["past"] and r["members"] > 1
     assert r["readings"][0]["date"] == "2026-11-15"
     assert r["peak"]["depth_effect_m"]["p50"] <= 0
     assert r["rain_context"]["added_mm"] == 40 and r["rain_context"]["season"] == "post-monsoon"

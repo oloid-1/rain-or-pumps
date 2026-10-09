@@ -1,15 +1,13 @@
 """
-Uploads bilstm-data/out and the model code to Kaggle as a private dataset, then
-pushes kaggle/run_bilstm.py as a private GPU kernel against it.
+Uploads data/training and the model code to Kaggle as a private dataset, then
+pushes a kernel from kaggle/ as a private GPU run against it.
 
-    python kaggle/push.py                 dataset (create or new version) + kernel
-    python kaggle/push.py --kernel-only   code unchanged on the dataset side
-    python kaggle/push.py --kernel-only --script run_followup.py   a second kernel, same dataset
-    python kaggle/push.py --main-data --script run_sim.py   + data/training/ as a dataset, simulator kernel
-    python kaggle/push.py --fetch         download the kernel's output to bilstm-data/out/kaggle_run/
+    python kaggle/push.py --script run_sim.py             dataset + simulator kernel
+    python kaggle/push.py --script run_bilstm.py          dataset + comparison BiLSTM kernel
+    python kaggle/push.py --kernel-only --script ...      dataset unchanged
+    python kaggle/push.py --fetch --script run_sim.py     download the output to data/kaggle/
 
-Needs the kaggle CLI logged in (~/.kaggle). Build the data first:
-    python bilstm-data/build_bilstm_data.py
+Needs the kaggle CLI logged in (~/.kaggle) and python models/build_sequences.py run first.
 """
 
 import argparse
@@ -19,16 +17,12 @@ import subprocess
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-OUT = REPO / "bilstm-data" / "out"
-STAGE = REPO / "bilstm-data" / "kaggle_stage"
+OUT = REPO / "data" / "training"
+STAGE = REPO / "data" / "kaggle_stage"
 DATA_FILES = ["tabular.parquet", "feature_spec.csv", "seq_channels.npz", "build_report.txt"]
 CODE_FILES = ["models/transformer.py", "models/train_transformer.py", "models/bilstm.py",
-              "models/train_bilstm.py", "simulator/train_sim.py"]
+              "models/train_bilstm.py", "models/build_training_data.py", "simulator/train_sim.py"]
 DATASET = "rain-or-pumps-bilstm-data"
-# the main build, data/training/, as its own dataset so runs can name it explicitly
-MAIN_DIR = REPO / "data" / "training"
-MAIN_FILES = ["tabular.parquet", "feature_spec.csv", "rain_seq.npz", "build_report.txt"]
-MAIN_DATASET = "rain-or-pumps-main-data"
 KERNEL = "rain-or-pumps-bilstm"
 
 
@@ -51,15 +45,6 @@ def push_dataset(owner):
     for f in CODE_FILES:
         shutil.copy2(REPO / f, d / Path(f).name)
     upload(d, owner, DATASET, "rain-or-pumps bilstm data")
-
-
-def push_main_dataset(owner):
-    d = STAGE / "main_dataset"
-    shutil.rmtree(d, ignore_errors=True)
-    d.mkdir(parents=True)
-    for f in MAIN_FILES:
-        shutil.copy2(MAIN_DIR / f, d / f)
-    upload(d, owner, MAIN_DATASET, "rain-or-pumps main data")
 
 
 def upload(d, owner, slug, title):
@@ -96,7 +81,7 @@ def push_kernel(owner, script):
         "enable_gpu": True,
         "machine_shape": "NvidiaTeslaT4",
         "enable_internet": False,
-        "dataset_sources": [f"{owner}/{DATASET}", f"{owner}/{MAIN_DATASET}"],
+        "dataset_sources": [f"{owner}/{DATASET}"],
         "competition_sources": [],
         "kernel_sources": [],
     }, indent=2))
@@ -106,7 +91,7 @@ def push_kernel(owner, script):
 
 def fetch(owner, script):
     name = kernel_name(script)
-    dest = OUT / ("kaggle_run" if name == KERNEL else f"kaggle_{name.removeprefix(KERNEL + '-')}")
+    dest = REPO / "data" / "kaggle" / name
     dest.mkdir(parents=True, exist_ok=True)
     print(kaggle("kernels", "status", f"{owner}/{name}"))
     print(kaggle("kernels", "output", f"{owner}/{name}", "-p", str(dest)))
@@ -116,16 +101,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--kernel-only", action="store_true")
     ap.add_argument("--fetch", action="store_true")
-    ap.add_argument("--script", default="run_bilstm.py", help="kernel entry point in kaggle/")
-    ap.add_argument("--main-data", action="store_true", help="also upload data/training/ as its own dataset")
+    ap.add_argument("--script", default="run_sim.py", help="kernel entry point in kaggle/")
     a = ap.parse_args()
     owner = user()
     if a.fetch:
         return fetch(owner, a.script)
     if not a.kernel_only:
         push_dataset(owner)
-        if a.main_data:
-            push_main_dataset(owner)
     push_kernel(owner, a.script)
 
 

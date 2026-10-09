@@ -2,7 +2,7 @@
 
 These results use the same 216,455 rows as the transformer: 2,759 wells, 33
 tabular features and the same blocked year split. The sequence input is the
-6-channel copy in `bilstm-data/` (see `bilstm-data/README.md`). The target is
+6-channel data built by `models/build_sequences.py`. The target is
 `delta_h_m`, positive when the water level fell. No past water level appears
 anywhere in the inputs.
 
@@ -73,8 +73,7 @@ build agree to 0.004 m MAE. So the copy reproduces the main data, and the
 comparisons above hold for either source. The district folds (0.425 / 0.525 /
 0.508 / 0.487 / 0.470) match the 6-channel model's fold by fold.
 
-Main-data run in `models/artifacts/bilstm_main_results.json`,
-`bilstm_main_results_cv.json` and `bilstm_main.pt`.
+The main-data run's files were not kept; its numbers are above.
 
 ## What to claim
 
@@ -207,11 +206,9 @@ This remains a hook, not the attribution, for the same reasons given in
 ## Reproduce
 
 ```bash
-python bilstm-data/build_bilstm_data.py                       # ~25 s
-python kaggle/push.py                                         # dataset + main kernel (~25 min on T4)
-python kaggle/push.py --kernel-only --script run_followup.py  # transformer CV + no-anomaly run (~30 min)
-python kaggle/push.py --fetch
-python kaggle/push.py --fetch --script run_followup.py
+python models/build_sequences.py                              # ~35 s
+python kaggle/push.py --script run_bilstm.py                  # dataset + kernel (~25 min on T4)
+python kaggle/push.py --fetch --script run_bilstm.py
 ```
 
 ## Next
@@ -221,5 +218,5 @@ python kaggle/push.py --fetch --script run_followup.py
 2. **Rain-response constraint.** A fixed sign on the rain response, for the what-if path.
 3. **Transformer with the 6 channels.** Separates the effect of the channels
    from the architecture on the sequence-only result.
-4. **The full 694k-row table** from `pipeline/`, where the sequence models may
+4. **The full 694k-row table** from the raw 32,299-well archive, where the sequence models may
    finally have a data advantage over boosting.

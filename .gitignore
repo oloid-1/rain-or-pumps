@@ -1,28 +1,25 @@
 # ---------------------------------------------------------------------------
-# Raw inputs. Large, public, and fetched rather than tracked.
-# scripts/fetch_data.py brings them back. Nothing here is needed to train:
-# data/derived/rain_cube.npz is tracked and carries the whole rainfall record.
+# Data. Only the small sample (data/sample/) and the district outlines are
+# tracked; the full data is fetched (scripts/fetch_data.py) and built locally.
 # ---------------------------------------------------------------------------
-data/imd_rainfall/*.nc
-data/cgwb/*.csv
-data/*.zip
+data/*
+!data/README.md
+!data/reference/
+!data/sample/
+data/sample/training/
 
-# Built tables. All reproducible with `make data` or the pipeline steps.
-# data/processed/ is an exception: it holds the week 1 merged dataset, which is
-# a named submission deliverable, so it is tracked.
-data/training/
-data/interim/
-data_cleaning/data/
-pipeline/data/processed/*
-pipeline/data/raw/*
-!pipeline/data/**/.gitkeep
-
-# Model checkpoints other than the one we publish in models/artifacts/
-pipeline/models/*.joblib
-*.ckpt
+# Built UI data (simulator/ui/build_ui_data.py, simulator/forecast/build_forecast.py)
+simulator/out/
+simulator/ui/data/rain/
+simulator/ui/data/scenario/
+simulator/ui/data/forecast/
+simulator/ui/data/wells.json
+simulator/ui/data/pressure.json
+simulator/ui/data/campaigns.json
+simulator/ui/data/sim.onnx
+simulator/ui/data/sim_meta.json
 
 # Scratch
-_to_delete/
 .ipynb_checkpoints/
 **/.ipynb_checkpoints/
 __pycache__/
@@ -35,22 +32,4 @@ env/
 *.swp
 ~$*
 *.tmp
-
-# Rendered previews of the docs, not the docs themselves
-docs/*.pdf
-page-*.jpg
-
-# BiLSTM data copy: built by bilstm-data/build_bilstm_data.py, staged for Kaggle by kaggle/push.py
-bilstm-data/out/
-bilstm-data/kaggle_stage/
-
-# Simulator: raw map downloads, model runs, and the built UI data (simulator/ui/build_ui_data.py,
-# simulator/geo/build_geo.py rebuild all of it). The small map layers are tracked.
-data/geo/raw/
-simulator/out/
-simulator/ui/data/rain/
-simulator/ui/data/scenario/
-simulator/ui/data/wells.json
-simulator/ui/data/pressure.json
-simulator/ui/data/campaigns.json
-simulator/ui/data/forecast/
+*.ckpt

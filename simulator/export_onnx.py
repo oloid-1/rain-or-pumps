@@ -1,7 +1,7 @@
 """
 Exports a simulator run trained elsewhere (Kaggle) to ONNX for the browser.
 
-    python simulator/export_onnx.py --run bilstm-data/out/kaggle_sim/sim_6ch --data bilstm-data/out
+    python simulator/export_onnx.py --run data/kaggle/rain-or-pumps-bilstm-sim/sim_6ch
 
 Rebuilds the scaling statistics from the same training rows, loads sim.pt, and
 writes sim.onnx and sim_meta.json into the run folder. Then it checks that ONNX
@@ -21,12 +21,13 @@ sys.path[:0] = [str(HERE), str(HERE.parent / "models")]
 from bilstm import RainBiLSTM  # noqa: E402
 from train_bilstm import load, channel_stats, scale  # noqa: E402
 from train_sim import encode_static, export, STATIC_NUMERIC  # noqa: E402
+from build_training_data import OUT_DIR  # noqa: E402
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", required=True)
-    ap.add_argument("--data", default=str(HERE.parent / "bilstm-data" / "out"))
+    ap.add_argument("--data", default=str(OUT_DIR))
     a = ap.parse_args()
     run = Path(a.run)
 

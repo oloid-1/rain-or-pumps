@@ -7,170 +7,85 @@ Kakara Siva Kumar · Rainchwar Parth · Vipul Aggarwal · Mentor: Sudharshan Des
 
 ---
 
-## The idea in three sentences
+## The idea
 
 Groundwater levels across India are falling, but rainfall varies naturally from year
 to year, so a decline can come from a run of dry years, from pumping, or from both.
 We model where the water level *should* be given the rain that actually fell, and
 treat the part of the decline that rainfall does not explain as a proxy for
-extraction pressure.
+extraction pressure. Extraction is never an input. It is the output.
 
-Extraction is never an input. It is the output.
+The result is a map application: replay the rain, ask what changed rain on any past
+or future day would do to the groundwater, forecast water levels to 2045, and rank
+the districts falling faster than rain explains.
 
-## Quick start
+## Quick start (sample data, a few minutes)
+
+The repository carries a small sample, one state's wells (Karnataka, 217) and the
+rain over it, so everything runs without the full download.
 
 ```bash
 pip install -r requirements.txt
-
-make data        # unpack the rainfall cube and build the training table  (~1 min)
-make train       # baselines + transformer, prints the comparison table   (~25 min CPU)
-make report      # attention figure and the district residual table
+make sample-app            # build from data/sample/, then serve at http://localhost:8000
+make test                  # API tests
 ```
 
-`make data` needs no download. The rainfall record ships with the repository as a
-22 MB packed cube; see [data/README.md](data/README.md).
+Full data (2,759 wells, all India): fetch it as described in
+[data/README.md](data/README.md), then `make sequences ui-data forecast api`.
 
-## Current results
+## Which model, and why
 
-Validation 2015-2017, every model on the same rows, target `delta_h_m`:
+Three model families were trained on the same rows, target `delta_h_m` (change in
+depth since the previous reading; positive = the water level fell). Held-out test
+years 2018-2022:
 
-| model | MAE (m) | RMSE (m) | R² |
+| model | test R² | test MAE (m) | rain response usable for what-if? |
 |---|---|---|---|
-| zero, predict no change | 2.163 | 3.227 | 0.000 |
-| season mean | 1.813 | 2.756 | 0.271 |
-| ridge on tabular | 1.753 | 2.872 | 0.208 |
-| LightGBM on tabular | 1.526 | 2.435 | 0.431 |
-| transformer, sequence + tabular | 1.531 | 2.461 | 0.418 |
-| transformer, sequence only | 1.641 | 2.618 | 0.342 |
-| BiLSTM, 6-channel sequence + tabular | 1.521 | 2.460 | 0.419 |
-| BiLSTM, sequence only | 1.554 | 2.499 | 0.400 |
+| LightGBM on 33 hand-built features | **0.484** | **1.427** | no: every edit means rebuilding its rain features, and no guarantee on direction |
+| Transformer, weekly rain + well facts | 0.439 | 1.457 | no: about 1 cm, sign not reliable |
+| BiLSTM, weekly rain + well facts | 0.441 | 1.449 | no: about 1 cm, sign flips between variants |
+| **BiLSTM simulator** (rain-response penalty) | 0.453 | 1.439 | **yes: right direction for 98% of wells** |
 
-Held-out test 2018-2022, transformer: MAE 1.457 m, RMSE 2.302 m, R² 0.439;
-BiLSTM: MAE 1.449 m, RMSE 2.298 m, R² 0.441. Five district folds: transformer
-R² 0.486, BiLSTM R² 0.481. BiLSTM details, and a rain-sensitivity caveat that
-matters for the what-if tool, in [models/BILSTM_RESULTS.md](models/BILSTM_RESULTS.md).
-
-The transformer matches LightGBM. That is the claim: attention over the raw weekly
-rainfall series recovers gradient boosting on hand-engineered rain windows, without
-being told which windows matter. The sequence-only ablation reaching R² 0.342 says
-the rain history is carrying the model, which is what the attribution needs.
-
-## Two BiLSTM models, two purposes
-
-The `bilstm` branch adds two models built on the same BiLSTM architecture. They
-differ in what they are for, not in the data: each was trained on both the
-6-channel `bilstm-data` copy and the main `data/training` build.
-
-| | **BiLSTM** (comparison model) | **Simulator** (runs in the UI) |
-|---|---|---|
-| Purpose | fit `delta_h_m` as well as possible, for the comparison with the transformer and LightGBM | answer "what if the rain had been different?" |
-| Rain input | the 104-week sequence, plus 23 rain-derived tabular features (windows, lags, anomalies) | the 104-week sequence only, so a scenario just rescales it |
-| Other inputs | static well facts | the same static well facts |
-| Training | Huber loss | Huber loss plus a rain-response penalty: more rain may not predict a larger fall |
-| On `bilstm-data` (6 channels) | valid R² 0.419, test 0.441, district CV 0.481 | valid R² 0.426, test 0.453, district CV 0.488 (**the model in the UI**) |
-| On main data (rain only) | valid R² 0.420, test 0.440, district CV 0.483 | valid R² 0.419, test 0.446 |
-| Response to +20% rain | −0.9 cm; the sign flips in some variants | −11 cm, the right direction for 98% of wells |
-| Code | `models/bilstm.py`, `models/train_bilstm.py` | `simulator/train_sim.py` |
-| Write-up | [models/BILSTM_RESULTS.md](models/BILSTM_RESULTS.md) | [simulator/README.md](simulator/README.md) |
-
-Present the BiLSTM for the architecture comparison: it ties the transformer and
-LightGBM. Present the simulator as the new contribution: a model whose rain
-response is usable for scenarios, at no cost in fit, with the map UI in
-`simulator/ui/` that runs it in the browser.
+All models make nearly the same errors (correlation 0.96), so the ceiling of about
+R² 0.45-0.48 comes from the data, not the model: roughly half the change is not
+explained by rain and fixed well facts, which is the gap the project is about. The
+simulator gives up 0.03 R² against LightGBM and is the only model whose answer to
+"what if it rained more?" can be trusted, so it is the model the application uses.
+Details: [models/MODEL_REVIEW.md](models/MODEL_REVIEW.md),
+[models/BILSTM_RESULTS.md](models/BILSTM_RESULTS.md), [simulator/README.md](simulator/README.md).
+A random (well-grouped) split puts all three at R² 0.49-0.51: see `notebooks/03`-`06`.
 
 ## Repository layout
 
 | Folder | What is in it |
 |---|---|
-| `data/` | Inputs and built tables. Only the packed rainfall cube is tracked; see `data/README.md` |
-| `data_cleaning/` | District outlines and the gap-closing notebook that the pipeline reads |
-| `pipeline/` | The data pipeline: raw archive to clean core tables to a training set |
-| `models/` | Model code: the direct training-table builder, the transformer, training and reporting |
-| `bilstm-data/` | The BiLSTM copy of the training data: same rows, a 6-channel weekly sequence. See `bilstm-data/README.md` |
-| `kaggle/` | Pushes the BiLSTM data and code to Kaggle and runs training on a GPU |
-| `simulator/` | New: a rain-scenario simulator (BiLSTM with a rain-response penalty) and the map UI that runs it in the browser. See `simulator/README.md` |
-| `notebooks/` | Exploration and the gap-closing notebook |
-| `docs/` | Problem statement, execution plan, methodology notes, the end-to-end review |
-| `decks/` | Review presentations |
-| `reports/` | Generated figures and tables |
-| `scripts/` | Data fetching and the rainfall cube builder |
-| `archive/` | The superseded first pipeline. Kept for the FastAPI endpoint, the what-if function and the atlas dashboard, which weeks 7 and 8 still need. See `archive/ARCHIVE.md` |
-
-### Where to start reading
-
-| If you want | Read |
-|---|---|
-| The whole story in one pass | `docs/05_end_to_end_review.docx` |
-| Every cleaning decision and its evidence | `docs/data_cleaning/DATA_CLEANING_SUMMARY.txt` |
-| Why wells are not snapped to grid nodes | `docs/04_spatial_merge_methodology.docx` |
-| What mbgl, Sy and the rest mean | `docs/03_glossary.docx` |
-| The model contract and the commands | `models/START_HERE.md` |
-| The measured results | `models/RESULTS.md` |
-| The BiLSTM and the transformer side by side | `models/BILSTM_RESULTS.md` |
-| The simulator and its UI | `simulator/README.md` |
+| `data/` | `sample/` (tracked, 2.3 MB), `reference/` district outlines; the full data lives here locally. See `data/README.md` |
+| `models/` | Training-table and sequence builders, the three model families, their results and write-ups |
+| `simulator/` | The chosen model (`train_sim.py`, `artifacts/`), the FastAPI service (`api/`), forecast and what-if engine (`forecast/`), map layers (`geo/`) and the UI (`ui/`) |
+| `kaggle/` | Runs training on a Kaggle GPU |
+| `notebooks/` | Exploration and the random-split comparison of the three models |
+| `reports/` | Figures and tables from the model runs |
+| `scripts/` | Data fetching, the rain cube builder, the sample maker |
 
 ## The data
 
-Two public sources, no common join key.
-
 | Source | What it is | Licence |
 |---|---|---|
-| CGWB groundwater levels | Depth to water at monitoring wells, four readings a year, 2000-2022. Raw archive 32,299 wells; the published quality-controlled extract 2,759 | CC BY 4.0, figshare doi 10.6084/m9.figshare.29293877.v3 |
+| CGWB groundwater levels | Depth to water at 2,759 monitoring wells, four readings a year, 2000-2022 | CC BY 4.0, figshare doi 10.6084/m9.figshare.29293877.v3 |
 | IMD gridded rainfall | Daily rainfall on a 0.25 degree grid, 1998-2022, 4,964 land cells | Open access, imdpune.gov.in |
+| Map layers | District outlines, HydroRIVERS, GeoDAR dams, GeoNames towns | see `simulator/README.md` |
 
-Wells sit at arbitrary surveyed coordinates and only 3 of 2,759 land on a grid node,
-so rainfall is transferred to each well by **masked bilinear interpolation** over the
-four surrounding nodes, with sea and missing corners dropped and the remaining
-weights renormalised. Nearest-node snapping, which this replaced, differs by 10.1
-percent of mean monthly rainfall.
+Rainfall reaches each well by masked bilinear interpolation over the four
+surrounding grid nodes. Behind every reading the model sees 104 weeks of rain, each
+week's place in the calendar, and the rain against that well's normal for those days.
 
-## Two builds of the same contract
-
-Both produce the same target, the same forbidden columns, the same split years and
-the same five district folds, with matching column names.
-
-| | `pipeline/` (full rebuild) | `models/build_training_data.py` (direct) |
-|---|---|---|
-| Source | Raw 32,299-well archive | Published 2,759-well extract |
-| Rows with a target | 694,253 | 216,455 |
-| Features | 25 | 33 |
-| Rain sequence | 52 weeks per land cell + stencil | 104 weeks per row |
-| Prerequisites | Raw zip, district outlines, geopandas, the gap-closing notebook | The two supplied files, or just the packed cube |
-| Status | Code complete | Built and trained; current results come from this |
-
-The direct build exists so the model work could start without the pipeline's
-prerequisites. Switching to the full table is a path change, not a rewrite.
-
-## The target, and the one rule that matters
-
-```
-delta_h_m = depth now  -  depth at the previous reading of the same well
-```
-
-**Positive means the water level fell.**
+## The one rule that matters
 
 Never a feature, enforced by an assertion that fails the build: any past water level,
-the year, latitude, longitude, district, state, well id. Feed the previous depth in
-and the model reaches R² near 0.9 by learning mean reversion, and the residual stops
-meaning anything. Rainfall normals are computed from training years only. The split
-is blocked by year: train 2000-2014, validation 2015-2017, test 2018-2022.
-
-## Rebuilding from the raw archive
-
-Only needed for the full 32,299-well table.
-
-```bash
-python3 scripts/fetch_data.py --all        # raw CGWB archive and IMD NetCDFs
-cd pipeline
-python -m bits_ml.ingest
-python -m bits_ml.grid
-python -m bits_ml.rain_panel
-python -m bits_ml.panel
-python -m bits_ml.seasons
-jupyter nbconvert --execute --inplace ../notebooks/02_clean_gaps.ipynb
-python -m bits_ml.training_data
-pytest                                     # 79 tests
-```
+the year, latitude, longitude, district, state, well id. With the previous depth as
+an input a model reaches R² near 0.9 by learning mean reversion, and the residual
+stops meaning anything. Rainfall normals use training years only. The split is
+blocked by year: train 2000-2014, validation 2015-2017, test 2018-2022.
 
 ## Attribution
 

@@ -21,16 +21,20 @@ either table:
                 season_year, year, lat, lon, district, state, well_uid
 """
 
+import os
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import xarray as xr
-from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-CGWB_CSV = REPO / "data" / "cgwb" / "CGWB_India_filtered_GWLs_ref_sy_2000_2022.csv"
-IMD_DIR = REPO / "data" / "imd_rainfall"
-RAIN_CUBE = REPO / "data" / "derived" / "rain_cube.npz"
-OUT_DIR = REPO / "data" / "training"
+# DATA_DIR=data/sample runs everything on the small sample instead of the full data
+DATA = Path(os.environ.get("DATA_DIR", REPO / "data")).resolve()
+CGWB_CSV = DATA / "cgwb" / "CGWB_India_filtered_GWLs_ref_sy_2000_2022.csv"
+IMD_DIR = DATA / "imd_rainfall"
+RAIN_CUBE = DATA / "derived" / "rain_cube.npz"
+OUT_DIR = DATA / "training"
 
 RAIN_YEARS = range(1998, 2023)
 TRAIN_YEARS = range(2000, 2015)

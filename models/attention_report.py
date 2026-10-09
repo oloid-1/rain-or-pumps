@@ -22,7 +22,7 @@ from transformer import RainTransformer
 from train_transformer import load, encode, scale_seq, TARGET, metrics
 
 REPO = Path(__file__).resolve().parents[1]
-T = REPO / "data" / "training"
+from build_training_data import OUT_DIR as T  # noqa: E402
 
 
 def main():

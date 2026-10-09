@@ -1,7 +1,7 @@
 """
 Kaggle kernel entry point. Pushed by kaggle/push.py; not meant to run locally.
 
-Finds the attached dataset (bilstm-data/out plus the model code), then runs
+Finds the attached dataset (data/training plus the model code), then runs
     1. the year-split comparison: baselines, bilstm, bilstm 1ch, bilstm seq only
     2. the 5 district folds
 Everything lands in /kaggle/working/run/, which is the kernel's output.

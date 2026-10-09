@@ -26,7 +26,7 @@ import pandas as pd
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-T = REPO / "data" / "training"
+from build_training_data import OUT_DIR as T  # noqa: E402
 SEED = 42
 
 

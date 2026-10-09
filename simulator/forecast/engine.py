@@ -69,10 +69,10 @@ def _shift_years(d: dt.date, k: int) -> dt.date:
 
 class Engine:
     def __init__(self, session, meta):
-        sys.path[:0] = [str(REPO / "models"), str(REPO / "bilstm-data")]
+        sys.path.insert(0, str(REPO / "models"))
         import pandas as pd
         import build_training_data as btd
-        from build_bilstm_data import daily_normals
+        from build_sequences import daily_normals
 
         idx = json.loads((FC / "index.json").read_text())
         self.n = len(idx["xy"])
@@ -82,6 +82,7 @@ class Engine:
         self.num = np.frombuffer(buf, np.float32, self.n * 4 * nnum).reshape(self.n, 4, nnum)
         self.cat = (np.frombuffer(buf, np.uint8, self.n * 4 * 4, self.n * 4 * nnum * 4)
                     .astype(np.int64).reshape(self.n, 4, 4))
+        btd.RAIN_CUBE = REPO / idx.get("rain_cube", "data/derived/rain_cube.npz")   # full data or sample
         xy = pd.DataFrame(idx["xy"], columns=["lat", "lon"])
         dates, rain = btd.well_daily_rain(xy)
         self.rain = np.nan_to_num(rain, nan=0.0).astype(np.float32)           # (days, wells)

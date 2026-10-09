@@ -1,19 +1,19 @@
 # simulator/
 
-A rain-scenario simulator built on top of the BiLSTM, and the map UI that runs it.
-This is new work on the `bilstm` branch. It is kept separate from the BiLSTM
-comparison: `models/` and `models/BILSTM_RESULTS.md` are unchanged by it.
+The model the application uses (a BiLSTM trained with a rain-response penalty),
+the FastAPI service around it, and the map UI.
 
 ```bash
-python bilstm-data/build_bilstm_data.py        # the 6-channel data (~25 s)
-python simulator/geo/build_geo.py              # map layers (needs data/geo/raw/, below)
+make sample-app                                # everything from data/sample/, served at :8000
+# or on the full data:
+python models/build_sequences.py               # training table + 6-channel data (~35 s)
 python simulator/ui/build_ui_data.py           # everything the UI reads (~2 min)
+python simulator/forecast/build_forecast.py    # forecast table (~18 min)
 uvicorn app:app --app-dir simulator/api --port 8000   # UI at http://localhost:8000, API docs at /docs
 ```
 
-Or with make: `make bilstm-data geo ui-data api`. The UI also works without the
-API, as a plain static page (`make ui`, port 8765); the model then runs in the
-browser.
+Map layers and the town list are tracked; `make geo places` rebuilds them from the
+downloads below.
 
 ## Why a separate model
 
@@ -181,10 +181,8 @@ flow, reservoir storage or dam releases, so the UI shows dams as context only.
 
 ## The API (`simulator/api/`)
 
-A FastAPI service: it serves the UI and the model behind it. This is the week 7
-deliverable (an API endpoint for the model), rebuilt for the current target and
-models; the archived `archive/ml/bits_ml/api.py` used the old target with the
-opposite sign.
+A FastAPI service: it serves the UI and the model behind it (the week 7
+deliverable, an API endpoint for the model).
 
 ```bash
 make api            # uvicorn on http://localhost:8000; interactive docs at /docs
@@ -255,7 +253,7 @@ Tests (`simulator/api/test_api.py`):
 
 | layer | source | licence | in the UI |
 |---|---|---|---|
-| Districts and India outline | `data_cleaning/reference/districts.geojson`, 724 post-2020 districts | — | outlines; India dissolved from them, so the boundary follows the Survey of India depiction (Leh to 37.08°N, Aksai Chin, PoK) |
+| Districts and India outline | `data/reference/districts.geojson`, 724 post-2020 districts | — | outlines; India dissolved from them, so the boundary follows the Survey of India depiction (Leh to 37.08°N, Aksai Chin, PoK) |
 | Rivers | HydroSHEDS HydroRIVERS v1.0, Asia | free, with attribution | 31,062 reaches inside India with mean flow ≥ 15 m³/s; ≥ 120 m³/s at national zoom |
 | Dams | GeoDAR v1.1 (zenodo 6163413) | CC BY 4.0 | 1,299 dams in India, 334 with storage volume. That is about a fifth of the national register: context, not inventory |
 | Relief | AWS Terrain Tiles (terrarium) | open | hillshade, read straight from the CDN |
@@ -271,18 +269,18 @@ curl -L --create-dirs -o data/geo/raw/geonames/cities1000.zip https://download.g
 cd data/geo/raw && unzip HydroRIVERS_v10_as_shp.zip && unzip GeoDAR_v10_v11.zip
 ```
 
-The four map layers and the model (`sim.onnx`, `sim_meta.json`) are tracked in
-`simulator/ui/data/`. The rain files, wells, scenario inputs and pressure table
-(about 80 MB) are rebuilt by `build_ui_data.py`, and the forecast table
-(`forecast/`, about 10 MB) by `simulator/forecast/build_forecast.py`.
+The four map layers and the town list are tracked in `simulator/ui/data/`. The
+model files, rain files, wells, scenario inputs and pressure table are written there
+by `build_ui_data.py` (about 80 MB on the full data), and the forecast table by
+`simulator/forecast/build_forecast.py`.
 
 ## Training and reproducing
 
 ```bash
-python simulator/train_sim.py --data bilstm-data/out --out simulator/out/sim_6ch       # CPU: slow
-python kaggle/push.py --main-data --script run_sim.py                                  # Kaggle T4: all runs, ~3.5 h
+python simulator/train_sim.py --out simulator/out/sim_6ch                       # CPU: slow
+python kaggle/push.py --script run_sim.py                                        # Kaggle T4
 python kaggle/push.py --fetch --script run_sim.py
-python simulator/export_onnx.py --run bilstm-data/out/kaggle_sim/sim_6ch                # checks ONNX against torch
+python simulator/export_onnx.py --run data/kaggle/rain-or-pumps-bilstm-sim/sim_6ch  # checks ONNX against torch
 ```
 
 The penalty passes run with cuDNN disabled, because cuDNN refuses an RNN

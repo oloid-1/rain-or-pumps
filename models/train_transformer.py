@@ -31,7 +31,7 @@ import torch.nn as nn
 from transformer import RainTransformer, SeqOnlyTransformer, count_params
 
 REPO = Path(__file__).resolve().parents[1]
-T = REPO / "data" / "training"
+from build_training_data import OUT_DIR as T  # noqa: E402
 SEED = 42
 TARGET = "delta_h_m"
 
@@ -214,7 +214,7 @@ def main():
     ap.add_argument("--weeks", type=int, default=104)
     ap.add_argument("--cv", action="store_true", help="5 district folds instead of the year split")
     ap.add_argument("--no-baselines", action="store_true")
-    ap.add_argument("--out", default=str(REPO / "data" / "training" / "results.json"))
+    ap.add_argument("--out", default=str(T / "results.json"))
     a = ap.parse_args()
 
     np.random.seed(SEED)

@@ -3,7 +3,7 @@ Recomputes every number in models/MODEL_REVIEW.md from the saved models.
 
     python models/review_checks.py
 
-Needs bilstm-data/out/ (python bilstm-data/build_bilstm_data.py),
+Needs data/training/ with the 6-channel data (python models/build_sequences.py),
 models/artifacts/bilstm.pt and simulator/artifacts/sim.pt. Trains one LightGBM
 with the exact settings of train_transformer.baselines(); everything else is
 inference. About two minutes on CPU.
@@ -25,6 +25,7 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(REPO / "models"), str(REPO / "simulator")]
 from bilstm import RainBiLSTM  # noqa: E402
 from train_bilstm import load, channel_stats, scale  # noqa: E402
+from build_training_data import OUT_DIR  # noqa: E402
 from train_sim import encode_static, STATIC_NUMERIC  # noqa: E402
 from train_transformer import encode, metrics, TARGET, SEED  # noqa: E402
 
@@ -56,7 +57,7 @@ def main():
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-    tab, x, ch, nums, cats = load(REPO / "bilstm-data" / "out")
+    tab, x, ch, nums, cats = load(OUT_DIR)
     y = tab[TARGET].to_numpy("float32")
     tr = (tab.split == "train").to_numpy()
     va = (tab.split == "valid").to_numpy()

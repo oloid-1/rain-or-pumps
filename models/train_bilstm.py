@@ -1,5 +1,5 @@
 """
-Trains the rain BiLSTM on the bilstm-data copy and prints the same comparison
+Trains the rain BiLSTM on the 6-channel data and prints the same comparison
 table as train_transformer.py, on the same rows and the same split.
 
     python models/train_bilstm.py                         6 channels, ablations, baselines
@@ -16,7 +16,7 @@ Runs, in order:
                       bilstm 1ch vs transformer isolates the architecture
     bilstm seq only   the chosen channels, no tabular arm
 
-Writes to --out (default bilstm-data/out/run/):
+Writes to --out (default data/training/run/):
     results.json, bilstm.pt, pooling_by_season.png/.csv, residual_by_district.csv
 """
 
@@ -30,11 +30,12 @@ import pandas as pd
 import torch
 
 from bilstm import RainBiLSTM, SeqOnlyBiLSTM
+from build_training_data import OUT_DIR
 from train_transformer import encode, metrics, baselines, run_nn, TARGET, SEED
 from transformer import count_params
 
 REPO = Path(__file__).resolve().parents[1]
-DATA = REPO / "bilstm-data" / "out"
+DATA = OUT_DIR
 
 # how each channel is scaled; statistics from train rows only
 LOG_CHANNELS = {"rain_mm"}            # log1p, then standardise

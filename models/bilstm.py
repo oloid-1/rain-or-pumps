@@ -8,7 +8,7 @@ split and the same tabular arm (TabEncoder is shared), so the difference
 between them is the sequence encoder.
 
 Architecture:
-    weekly sequence (104, C)           C = 1 (rain only) or 6 (bilstm-data channels)
+    weekly sequence (104, C)           C = 1 (rain only) or 6 (build_sequences.py)
       -> linear to d_in                                    (104, d_in)
       -> 2-layer bidirectional LSTM, hidden h per direction (104, 2h)
       -> attention pooling over weeks                      (2h,)

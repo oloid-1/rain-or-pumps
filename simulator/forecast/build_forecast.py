@@ -30,9 +30,9 @@ import pandas as pd
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
-sys.path[:0] = [str(REPO / "models"), str(REPO / "bilstm-data")]
+sys.path.insert(0, str(REPO / "models"))
 import build_training_data as btd  # noqa: E402
-from build_bilstm_data import daily_normals, WET_MM  # noqa: E402
+from build_sequences import daily_normals, WET_MM  # noqa: E402
 
 DATA = REPO / "simulator" / "ui" / "data"
 OUT = DATA / "forecast"
@@ -251,7 +251,7 @@ def main():
     camps = json.loads((DATA / "campaigns.json").read_text())
     cidx = {(c["year"], c["season"]): i for i, c in enumerate(camps)}
     ids = [w["id"] for w in wells]
-    tab = pd.read_parquet(REPO / "bilstm-data" / "out" / "tabular.parquet")
+    tab = pd.read_parquet(btd.OUT_DIR / "tabular.parquet")
 
     x, num, cat = build_inputs(tab, ids, meta)
     print(f"  inputs: {len(x):,} rows ({len(wells):,} wells x {len(YEARS)} years x 4 seasons)")
@@ -291,6 +291,7 @@ def main():
         layout=dict(deltas=["shifts", nw, len(YEARS), 4, "float16"], trend=[nw, 4, "float32"],
                     static=st["static"]), xy=st["xy"],
         shifts=SHIFTS, years=YEARS, seasons=SEASONS, held_out=[min(HELD_OUT), max(HELD_OUT)],
+        rain_cube=btd.RAIN_CUBE.relative_to(REPO).as_posix(),      # engine.py reads the same rain
         start=start, backtest=bt), separators=(",", ":")))
     print(f"wrote {OUT}")
 

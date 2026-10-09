@@ -14,7 +14,7 @@ Every number here that is not in the two results files comes from
 about two minutes on CPU:
 
 ```bash
-python bilstm-data/build_bilstm_data.py   # if bilstm-data/out/ is not built
+python models/build_sequences.py         # if data/training/ is not built
 python models/review_checks.py
 ```
 
@@ -311,7 +311,7 @@ section 3.
 4. **Validate** against CGWB's published stage-of-extraction categories
    (over-exploited, critical, semi-critical, safe). Over-exploited districts
    should show positive, significant `b_d` more often than safe ones. The
-   archived `archive/ml/bits_ml/attribution.py` already did this comparison
+   first pipeline's attribution step (since removed) already did this comparison
    for the old target, so most of the code exists.
 
 **Success looks like:** a ranked table with intervals, and a clear separation
