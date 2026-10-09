@@ -1,0 +1,26 @@
+Random (well-grouped) validation split
+==================================================
+
+Why grouped by well_uid, not a plain random row split:
+  each well contributes ~78 near-duplicate rows (same location,
+  same aquifer, overlapping rain history). A row-level shuffle
+  would leak the same well into train and valid. Grouping by
+  well_uid keeps the split 'random, not by year' while keeping
+  each well's rows on one side only.
+
+split         rows     wells     row %
+train      151,534     1,931     70.0%
+valid       32,539       414     15.0%
+test        32,382       414     15.0%
+
+wells appearing in more than one split: 0 (must be 0)
+
+delta_h_m by split (mean / std) - should be close across splits:
+  train  mean -0.018  std 3.140  n 151,534
+  valid  mean -0.022  std 3.199  n 32,539
+  test   mean -0.019  std 3.157  n 32,382
+
+For reference, the year-blocked split it replaces (this run):
+  train  mean -0.011  std 3.160  n 144,558
+  valid  mean +0.009  std 3.227  n 27,774
+  test   mean -0.063  std 3.073  n 44,123
