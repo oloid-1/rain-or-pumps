@@ -1,23 +1,14 @@
 # ---------------------------------------------------------------------------
-# Data. Only the small sample (data/sample/) and the district outlines are
-# tracked; the full data is fetched (scripts/fetch_data.py) and built locally.
+# Data. The raw inputs (data/cgwb, data/derived) and the app's built data
+# (simulator/ui/data) are tracked. Large downloads and rebuildable tables are not.
 # ---------------------------------------------------------------------------
-data/*
-!data/README.md
-!data/reference/
-!data/sample/
-data/sample/training/
-
-# Built UI data (simulator/ui/build_ui_data.py, simulator/forecast/build_forecast.py)
+data/imd_rainfall/
+data/geo/raw/
+data/training/
+data/kaggle/
+data/kaggle_stage/
+data/*.zip
 simulator/out/
-simulator/ui/data/rain/
-simulator/ui/data/scenario/
-simulator/ui/data/forecast/
-simulator/ui/data/wells.json
-simulator/ui/data/pressure.json
-simulator/ui/data/campaigns.json
-simulator/ui/data/sim.onnx
-simulator/ui/data/sim_meta.json
 
 # Scratch
 .ipynb_checkpoints/
@@ -33,3 +24,4 @@ env/
 ~$*
 *.tmp
 *.ckpt
+.vercel/

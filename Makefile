@@ -1,17 +1,14 @@
 # Rain or Pumps? - common tasks.
 #
-# Quick start on the bundled sample (one state, runs in a few minutes):
+# Run the app (its data is committed):
 #   pip install -r requirements.txt
-#   make sample-app        build everything from data/sample/ and serve it at http://localhost:8000
-# Training the models needs requirements-train.txt.
+#   make api               http://localhost:8000
 #
-# Full data (fetch it first, see data/README.md):
-#   make sequences ui-data forecast api
-#
-# Any target runs on the sample with DATA_DIR=data/sample, e.g. DATA_DIR=data/sample make sequences
+# Rebuild the app's data from data/ (needs requirements-train.txt, ~20 min):
+#   make app-data
 PY ?= python3
 
-.PHONY: data sequences cube train cv report bilstm sim geo places ui-data forecast api test sample sample-app fetch clean-built
+.PHONY: data sequences cube train cv report bilstm sim geo places ui-data forecast app-data api test fetch clean-built
 
 ## the training table and the 1-channel rain sequence (data/training/)
 data:
@@ -58,12 +55,9 @@ api:
 test:
 	$(PY) -m pytest simulator/api -q
 
-## cut data/sample/ out of the full data (one state), and build + serve the app from it
-sample:
-	$(PY) scripts/make_sample.py
-sample-app:
+## all of the app's data: sequences, ui-data and forecast in one go
+app-data:
 	$(PY) scripts/build_app.py
-	$(PY) -m uvicorn main:app --port 8000
 
 ## download the raw inputs
 fetch:
@@ -71,4 +65,4 @@ fetch:
 
 ## remove everything that can be rebuilt
 clean-built:
-	rm -rf data/training data/sample/training data/kaggle data/kaggle_stage simulator/out
+	rm -rf data/training data/kaggle data/kaggle_stage simulator/out

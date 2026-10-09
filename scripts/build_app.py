@@ -1,9 +1,9 @@
 """
-Builds everything the app serves, from the bundled sample (data/sample/): the
-training rows, the UI data and the forecast table. Vercel runs this as the build
-step (vercel.json); locally it is `python scripts/build_app.py` or `make sample-app`.
+Builds everything the app serves: the training rows, the UI data and the forecast
+table (about 20 minutes on a laptop CPU). The results in simulator/ui/data are
+committed, so the app and Vercel run without this step.
 
-    DATA_DIR=data python scripts/build_app.py       the same on the full data
+    python scripts/build_app.py          (or: make app-data)
 """
 
 import os
@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
-env = {**os.environ, "DATA_DIR": os.environ.get("DATA_DIR", str(REPO / "data" / "sample"))}
+env = {**os.environ, "DATA_DIR": os.environ.get("DATA_DIR", str(REPO / "data"))}
 
 for step in (["models/build_sequences.py"],
              ["simulator/ui/build_ui_data.py", "--run", "simulator/artifacts"],

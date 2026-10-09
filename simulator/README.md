@@ -4,8 +4,8 @@ The model the application uses (a BiLSTM trained with a rain-response penalty),
 the FastAPI service around it, and the map UI.
 
 ```bash
-make sample-app                                # everything from data/sample/, served at :8000
-# or on the full data:
+make api                                       # serve the committed data at :8000
+# rebuild the data (make app-data does all three):
 python models/build_sequences.py               # training table + 6-channel data (~35 s)
 python simulator/ui/build_ui_data.py           # everything the UI reads (~2 min)
 python simulator/forecast/build_forecast.py    # forecast table (~18 min)

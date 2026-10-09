@@ -3,8 +3,8 @@ Tests for the simulator API.
 
     pytest simulator/api -q
 
-Needs the built UI data (python simulator/ui/build_ui_data.py). Works on the full
-data or on the sample (DATA_DIR=data/sample): places come from whatever is built.
+Needs the app's data in simulator/ui/data (committed; rebuilt by scripts/build_app.py).
+Places in the tests come from whatever data is built.
 """
 
 import numpy as np

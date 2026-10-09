@@ -1,30 +1,26 @@
 # data/
 
-Everything the code reads lives here. Set `DATA_DIR=data/sample` to run any step on
-the sample instead of the full data; both have the same layout.
+Everything the code reads lives here. Set `DATA_DIR` to point the builds at another
+copy with the same layout.
 
-## What is tracked
+## What is in the repository
 
 | Path | Size | What it is |
 |---|---|---|
-| `sample/cgwb/` | 0.2 MB | the CGWB well file cut to one state (Karnataka, 217 wells) |
-| `sample/derived/rain_cube.npz` | 2 MB | the rain cube cut to the 431 grid cells around those wells |
+| `cgwb/CGWB_India_filtered_GWLs_ref_sy_2000_2022.csv` | 2.8 MB | CGWB quality-controlled levels, 2,759 wells, 2000-2022 |
+| `derived/rain_cube.npz` | 22 MB | the whole IMD daily rain record, 1998-2022, packed (below) |
 | `reference/districts.geojson` | 0.4 MB | 724 post-2020 district outlines |
 
-`python scripts/make_sample.py --state <name>` rebuilds the sample from the full data.
+The app's built data (wells, rain files, forecast table, model files) is committed
+in `simulator/ui/data/`.
 
-## The full data (local, not in the repository)
+## Not in the repository
 
 | Path | Size | How to get it |
 |---|---|---|
-| `cgwb/CGWB_India_filtered_GWLs_ref_sy_2000_2022.csv` | 2.8 MB | `python scripts/fetch_data.py --cgwb` (figshare doi 10.6084/m9.figshare.29293877) |
-| `imd_rainfall/imd_rf25_*.nc` | 607 MB | `python scripts/fetch_data.py --imd` |
-| `derived/rain_cube.npz` | 22 MB | `make cube`, after the IMD download |
+| `imd_rainfall/imd_rf25_*.nc` | 607 MB | `python scripts/fetch_data.py --imd`; only to rebuild the cube (`make cube`) |
 | `geo/raw/` | | river, dam and town downloads for the map layers, see `simulator/README.md` |
 | `training/` | 130 MB | `make sequences` |
-
-Figshare's current version (v3) of the CGWB record no longer lists the extract CSV
-directly; if the fetch fails, take it from the record's earlier version.
 
 ## Why the rainfall is packed into a cube
 
@@ -35,8 +31,8 @@ days: maximum difference 0.05 mm, mean 0.005 mm.
 
 | Array | Shape | Meaning |
 |---|---|---|
-| `rain` | (9131, cells) int16 | tenths of a millimetre; -9999 means no data |
-| `lat_idx`, `lon_idx` | (cells,) | each column's row and column in the full grid |
+| `rain` | (9131, 4964) int16 | tenths of a millimetre; -9999 means no data |
+| `lat_idx`, `lon_idx` | (4964,) | each column's row and column in the full grid |
 | `lat`, `lon` | (129,), (135,) | 6.50-38.50 and 66.50-100.00, step 0.25 |
 | `days` | (9131,) | 1998-01-01 to 2022-12-31 |
 

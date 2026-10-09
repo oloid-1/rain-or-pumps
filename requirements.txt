@@ -1,9 +1,8 @@
-# What the app needs to build its data and run (Vercel installs this file).
-# Training the models and the notebooks need requirements-train.txt as well.
+# What the running app needs (Vercel installs this file).
+# Building the app's data, training the models, the notebooks and the tests
+# need requirements-train.txt as well.
 fastapi>=0.110
 uvicorn>=0.29
 onnxruntime>=1.17
 numpy>=1.26
 pandas>=2.0
-pyarrow>=15.0
-shapely>=2.0

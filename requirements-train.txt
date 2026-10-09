@@ -1,7 +1,9 @@
-# training, notebooks and tests, on top of the app's requirements
+# building the app's data, training, notebooks and tests, on top of the app's requirements
 -r requirements.txt
 
 # data
+pyarrow>=15.0
+shapely>=2.0
 xarray>=2024.1
 netcdf4>=1.6
 scipy>=1.11

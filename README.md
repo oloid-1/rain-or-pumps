@@ -5,6 +5,13 @@
 BITS Pilani PGCP AI and ML capstone, Group 18
 Kakara Siva Kumar · Rainchwar Parth · Vipul Aggarwal · Mentor: Sudharshan Deshmukh
 
+**Live app: [rain-or-pumps.vercel.app](https://rain-or-pumps.vercel.app/#forecast)**
+([Past rain](https://rain-or-pumps.vercel.app/#replay) ·
+[What if it rains](https://rain-or-pumps.vercel.app/#whatif) ·
+[Future](https://rain-or-pumps.vercel.app/#forecast) ·
+[Pumping hotspots](https://rain-or-pumps.vercel.app/#pressure) ·
+[API docs](https://rain-or-pumps.vercel.app/docs))
+
 ---
 
 ## The idea
@@ -15,32 +22,30 @@ We model where the water level *should* be given the rain that actually fell, an
 treat the part of the decline that rainfall does not explain as a proxy for
 extraction pressure. Extraction is never an input. It is the output.
 
-The result is a map application: replay the rain, ask what changed rain on any past
-or future day would do to the groundwater, forecast water levels to 2045, and rank
-the districts falling faster than rain explains.
+The result is a map application for all of India: replay the rain, ask what changed
+rain on any past or future day would do to the groundwater, forecast water levels to
+2045, and rank the districts falling faster than rain explains.
 
-## Quick start (sample data, a few minutes)
+## Quick start
 
-The repository carries a small sample, one state's wells (Karnataka, 217) and the
-rain over it, so everything runs without the full download.
+All the data is in the repository: the raw inputs in `data/` and the app's built
+data in `simulator/ui/data/`.
 
 ```bash
 pip install -r requirements.txt     # the app: FastAPI, ONNX runtime, pandas
-make sample-app                     # build from data/sample/, then serve at http://localhost:8000
+make api                            # http://localhost:8000, API docs at /docs
 ```
 
-`requirements-train.txt` adds what training the models, the notebooks and the tests
-need (PyTorch, LightGBM, Jupyter, pytest). Full data (2,759 wells, all India): fetch
-it as described in [data/README.md](data/README.md), then
-`DATA_DIR=data python scripts/build_app.py` and `make api`.
+`requirements-train.txt` adds what rebuilding the data, training the models, the
+notebooks and the tests need (PyTorch, LightGBM, pyarrow, Jupyter, pytest).
+`make app-data` rebuilds the app's data from `data/` (about 20 minutes).
 
 ## Deploying on Vercel
 
-`vercel.json` deploys the app as one FastAPI service (`main.py`). The build step,
-`scripts/build_app.py`, builds the app's data from `data/sample/`, so the deployment
-needs only the repository: import it in Vercel, or run `vercel deploy`. It installs
-`requirements.txt` only (about 400 MB, under the 500 MB function limit) and allows
-60 s per request for the live what-if runs.
+Deployed at **https://rain-or-pumps.vercel.app**. `vercel.json` deploys the app as
+one FastAPI service (`main.py`) with its committed data, so there is no build step:
+import the repository in Vercel, or run `vercel deploy`. It installs `requirements.txt` only and allows 60 s per request for
+the live what-if runs.
 
 ## Which model, and why
 
@@ -68,14 +73,14 @@ A random (well-grouped) split puts all three at R² 0.49-0.51: see `notebooks/03
 
 | Folder | What is in it |
 |---|---|
-| `data/` | `sample/` (tracked, 2.3 MB), `reference/` district outlines; the full data lives here locally. See `data/README.md` |
+| `data/` | The raw inputs: CGWB wells, the packed IMD rain cube, district outlines. See `data/README.md` |
 | `models/` | Training-table and sequence builders, the three model families, their results and write-ups |
 | `main.py`, `vercel.json` | The app's entrypoint and the Vercel deployment |
 | `simulator/` | The chosen model (`train_sim.py`, `artifacts/`), the FastAPI service (`api/`), forecast and what-if engine (`forecast/`), map layers (`geo/`) and the UI (`ui/`) |
 | `kaggle/` | Runs training on a Kaggle GPU |
 | `notebooks/` | Exploration and the random-split comparison of the three models |
 | `reports/` | Figures and tables from the model runs |
-| `scripts/` | Data fetching, the rain cube builder, the sample maker |
+| `scripts/` | Data fetching, the rain cube builder, the app data build |
 
 ## The data
 

@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 
 REPO = Path(__file__).resolve().parents[1]
-# DATA_DIR=data/sample runs everything on the small sample instead of the full data
+# DATA_DIR points the builds at another copy of the data, e.g. a subset of wells
 DATA = Path(os.environ.get("DATA_DIR", REPO / "data")).resolve()
 CGWB_CSV = DATA / "cgwb" / "CGWB_India_filtered_GWLs_ref_sy_2000_2022.csv"
 IMD_DIR = DATA / "imd_rainfall"

@@ -5,7 +5,6 @@
       "root": ".",
       "framework": "fastapi",
       "entrypoint": "main:app",
-      "buildCommand": "python scripts/build_app.py",
       "functions": {
         "main.py": {
           "maxDuration": 60
