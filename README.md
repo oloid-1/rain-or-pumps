@@ -42,13 +42,41 @@ Validation 2015-2017, every model on the same rows, target `delta_h_m`:
 | LightGBM on tabular | 1.526 | 2.435 | 0.431 |
 | transformer, sequence + tabular | 1.531 | 2.461 | 0.418 |
 | transformer, sequence only | 1.641 | 2.618 | 0.342 |
+| BiLSTM, 6-channel sequence + tabular | 1.521 | 2.460 | 0.419 |
+| BiLSTM, sequence only | 1.554 | 2.499 | 0.400 |
 
-Held-out test 2018-2022, transformer: MAE 1.457 m, RMSE 2.302 m, R² 0.439.
+Held-out test 2018-2022, transformer: MAE 1.457 m, RMSE 2.302 m, R² 0.439;
+BiLSTM: MAE 1.449 m, RMSE 2.298 m, R² 0.441. Five district folds: transformer
+R² 0.486, BiLSTM R² 0.481. BiLSTM details, and a rain-sensitivity caveat that
+matters for the what-if tool, in [models/BILSTM_RESULTS.md](models/BILSTM_RESULTS.md).
 
 The transformer matches LightGBM. That is the claim: attention over the raw weekly
 rainfall series recovers gradient boosting on hand-engineered rain windows, without
 being told which windows matter. The sequence-only ablation reaching R² 0.342 says
 the rain history is carrying the model, which is what the attribution needs.
+
+## Two BiLSTM models, two purposes
+
+The `bilstm` branch adds two models built on the same BiLSTM architecture. They
+differ in what they are for, not in the data: each was trained on both the
+6-channel `bilstm-data` copy and the main `data/training` build.
+
+| | **BiLSTM** (comparison model) | **Simulator** (runs in the UI) |
+|---|---|---|
+| Purpose | fit `delta_h_m` as well as possible, for the comparison with the transformer and LightGBM | answer "what if the rain had been different?" |
+| Rain input | the 104-week sequence, plus 23 rain-derived tabular features (windows, lags, anomalies) | the 104-week sequence only, so a scenario just rescales it |
+| Other inputs | static well facts | the same static well facts |
+| Training | Huber loss | Huber loss plus a rain-response penalty: more rain may not predict a larger fall |
+| On `bilstm-data` (6 channels) | valid R² 0.419, test 0.441, district CV 0.481 | valid R² 0.426, test 0.453, district CV 0.488 (**the model in the UI**) |
+| On main data (rain only) | valid R² 0.420, test 0.440, district CV 0.483 | valid R² 0.419, test 0.446 |
+| Response to +20% rain | −0.9 cm; the sign flips in some variants | −11 cm, the right direction for 98% of wells |
+| Code | `models/bilstm.py`, `models/train_bilstm.py` | `simulator/train_sim.py` |
+| Write-up | [models/BILSTM_RESULTS.md](models/BILSTM_RESULTS.md) | [simulator/README.md](simulator/README.md) |
+
+Present the BiLSTM for the architecture comparison: it ties the transformer and
+LightGBM. Present the simulator as the new contribution: a model whose rain
+response is usable for scenarios, at no cost in fit, with the map UI in
+`simulator/ui/` that runs it in the browser.
 
 ## Repository layout
 
@@ -58,6 +86,9 @@ the rain history is carrying the model, which is what the attribution needs.
 | `data_cleaning/` | District outlines and the gap-closing notebook that the pipeline reads |
 | `pipeline/` | The data pipeline: raw archive to clean core tables to a training set |
 | `models/` | Model code: the direct training-table builder, the transformer, training and reporting |
+| `bilstm-data/` | The BiLSTM copy of the training data: same rows, a 6-channel weekly sequence. See `bilstm-data/README.md` |
+| `kaggle/` | Pushes the BiLSTM data and code to Kaggle and runs training on a GPU |
+| `simulator/` | New: a rain-scenario simulator (BiLSTM with a rain-response penalty) and the map UI that runs it in the browser. See `simulator/README.md` |
 | `notebooks/` | Exploration and the gap-closing notebook |
 | `docs/` | Problem statement, execution plan, methodology notes, the end-to-end review |
 | `decks/` | Review presentations |
@@ -75,6 +106,8 @@ the rain history is carrying the model, which is what the attribution needs.
 | What mbgl, Sy and the rest mean | `docs/03_glossary.docx` |
 | The model contract and the commands | `models/START_HERE.md` |
 | The measured results | `models/RESULTS.md` |
+| The BiLSTM and the transformer side by side | `models/BILSTM_RESULTS.md` |
+| The simulator and its UI | `simulator/README.md` |
 
 ## The data
 

@@ -39,3 +39,17 @@ env/
 # Rendered previews of the docs, not the docs themselves
 docs/*.pdf
 page-*.jpg
+
+# BiLSTM data copy: built by bilstm-data/build_bilstm_data.py, staged for Kaggle by kaggle/push.py
+bilstm-data/out/
+bilstm-data/kaggle_stage/
+
+# Simulator: raw map downloads, model runs, and the built UI data (simulator/ui/build_ui_data.py,
+# simulator/geo/build_geo.py rebuild all of it). The small map layers are tracked.
+data/geo/raw/
+simulator/out/
+simulator/ui/data/rain/
+simulator/ui/data/scenario/
+simulator/ui/data/wells.json
+simulator/ui/data/pressure.json
+simulator/ui/data/campaigns.json

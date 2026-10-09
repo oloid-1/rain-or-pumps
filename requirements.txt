@@ -23,3 +23,9 @@ ipykernel
 
 # tests
 pytest>=8.0
+
+# simulator API (simulator/api)
+fastapi>=0.110
+uvicorn[standard]>=0.29
+onnxruntime>=1.17
+httpx>=0.27

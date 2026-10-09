@@ -33,7 +33,7 @@ import pandas as pd
 import torch
 
 from transformer import RainTransformer, count_params
-from bilstm import BiLSTMModel
+from bilstm import RainBiLSTM
 from train_transformer import (encode, scale_seq, metrics, run_nn, baselines,
                                 TARGET)
 from random_split import make_random_split
@@ -162,8 +162,8 @@ def run_bilstm(cfg_name, force=False):
     y = tab[TARGET].to_numpy("float32")
 
     torch.manual_seed(SEED)
-    m = BiLSTMModel(len(nums), sizes, n_channels=1, hidden=cfg["hidden"],
-                    layers=cfg["layers"], d_model=cfg["hidden"])
+    m = RainBiLSTM(len(nums), sizes, n_channels=1, hidden=cfg["hidden"],
+                   n_layers=cfg["layers"], d_model=cfg["hidden"])
     print(f"[{label}] params {count_params(m):,}  config {cfg}")
     t0 = time.time()
     m, vm, hist, predict = run_nn(m, S, None, Xn, C, y, tr, va, EPOCHS,
