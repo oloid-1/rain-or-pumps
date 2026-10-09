@@ -21,7 +21,8 @@ OUT = REPO / "data" / "training"
 STAGE = REPO / "data" / "kaggle_stage"
 DATA_FILES = ["tabular.parquet", "feature_spec.csv", "seq_channels.npz", "build_report.txt"]
 CODE_FILES = ["models/transformer.py", "models/train_transformer.py", "models/bilstm.py",
-              "models/train_bilstm.py", "models/build_training_data.py", "simulator/train_sim.py"]
+              "models/train_bilstm.py", "models/build_training_data.py", "models/features.py",
+              "simulator/train_sim.py"]
 DATASET = "rain-or-pumps-bilstm-data"
 KERNEL = "rain-or-pumps-bilstm"
 

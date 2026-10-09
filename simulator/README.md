@@ -9,7 +9,7 @@ make sample-app                                # everything from data/sample/, s
 python models/build_sequences.py               # training table + 6-channel data (~35 s)
 python simulator/ui/build_ui_data.py           # everything the UI reads (~2 min)
 python simulator/forecast/build_forecast.py    # forecast table (~18 min)
-uvicorn app:app --app-dir simulator/api --port 8000   # UI at http://localhost:8000, API docs at /docs
+uvicorn main:app --port 8000                     # UI at http://localhost:8000, API docs at /docs
 ```
 
 Map layers and the town list are tracked; `make geo places` rebuilds them from the

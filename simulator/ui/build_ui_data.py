@@ -7,7 +7,7 @@ simulator run.
 Reads
     data/derived/rain_cube.npz        daily IMD rain, every land cell, 1998-2022
     data/training/                    tabular rows + 6-channel sequences
-    <run>/sim.pt, <run>/sim.onnx, <run>/sim_meta.json
+    <run>/sim.onnx, <run>/sim_meta.json
 
 Writes simulator/ui/data/
     rain/grid.json       grid geometry: lat/lon axes, land-cell positions, quantisation
@@ -33,15 +33,13 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import onnxruntime as ort
 import pandas as pd
-import torch
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 sys.path[:0] = [str(REPO / "simulator"), str(REPO / "models")]
-from bilstm import RainBiLSTM  # noqa: E402
-from train_bilstm import load, scale  # noqa: E402
-from train_sim import encode_static, predict, STATIC_NUMERIC  # noqa: E402
+from features import load, scale, encode_static  # noqa: E402
 from build_training_data import OUT_DIR, RAIN_CUBE  # noqa: E402
 
 OUT = HERE / "data"
@@ -118,11 +116,12 @@ def main():
     mk = (tab.split == "train").to_numpy()
     # the model's own scaling, so a sample (DATA_DIR=data/sample) is scaled exactly as in training
     S = scale(x, channels, {c: (v["mean"], v["std"]) for c, v in meta["channel_scaling"].items()})
-    Xn, C, sizes, _ = encode_static(tab, mk, meta["static"])
+    Xn, C, _, _ = encode_static(tab, mk, meta["static"])
 
-    m = RainBiLSTM(len(STATIC_NUMERIC), sizes, len(channels))
-    m.load_state_dict(torch.load(run / "sim.pt", map_location="cpu"))
-    pred = predict(m, S, Xn, C, np.arange(len(tab)), "cpu")
+    sess = ort.InferenceSession(str(run / "sim.onnx"), providers=["CPUExecutionProvider"])
+    name = sess.get_outputs()[0].name
+    pred = np.concatenate([sess.run([name], {"seq": S[i:i + 4096], "num": Xn[i:i + 4096], "cat": C[i:i + 4096]})[0]
+                           for i in range(0, len(S), 4096)])
     tab = place_wells(tab.assign(pred=pred, resid=tab.delta_h_m - pred))
     print(f"  predictions on {len(tab):,} rows")
 

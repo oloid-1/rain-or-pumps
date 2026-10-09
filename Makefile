@@ -1,7 +1,9 @@
 # Rain or Pumps? - common tasks.
 #
 # Quick start on the bundled sample (one state, runs in a few minutes):
+#   pip install -r requirements.txt
 #   make sample-app        build everything from data/sample/ and serve it at http://localhost:8000
+# Training the models needs requirements-train.txt.
 #
 # Full data (fetch it first, see data/README.md):
 #   make sequences ui-data forecast api
@@ -51,7 +53,7 @@ forecast:
 
 ## the API with the UI at http://localhost:8000 (docs at /docs)
 api:
-	$(PY) -m uvicorn app:app --app-dir simulator/api --port 8000
+	$(PY) -m uvicorn main:app --port 8000
 
 test:
 	$(PY) -m pytest simulator/api -q
@@ -60,10 +62,8 @@ test:
 sample:
 	$(PY) scripts/make_sample.py
 sample-app:
-	DATA_DIR=data/sample $(PY) models/build_sequences.py
-	DATA_DIR=data/sample $(PY) simulator/ui/build_ui_data.py --run simulator/artifacts
-	DATA_DIR=data/sample $(PY) simulator/forecast/build_forecast.py
-	$(PY) -m uvicorn app:app --app-dir simulator/api --port 8000
+	$(PY) scripts/build_app.py
+	$(PY) -m uvicorn main:app --port 8000
 
 ## download the raw inputs
 fetch:

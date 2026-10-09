@@ -1,7 +1,7 @@
 """
 FastAPI service for the Rain or Pumps simulator.
 
-    uvicorn app:app --app-dir simulator/api --port 8000      (or: make api)
+    uvicorn main:app --port 8000      (or: make api)
     open http://localhost:8000          the UI, now backed by this API
          http://localhost:8000/docs     interactive API documentation
 

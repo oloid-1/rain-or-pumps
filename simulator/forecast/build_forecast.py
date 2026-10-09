@@ -147,6 +147,13 @@ def predict(sess, x, num, cat, meta, f):
     return out
 
 
+def regular(camps, a, b):
+    """True when campaign b is the season right after campaign a. Campaign indices
+    alone are not enough: a region can miss a campaign, as the sample does."""
+    q = lambda c: camps[c]["year"] * 4 + SEASONS.index(camps[c]["season"])
+    return q(b) - q(a) == 1
+
+
 def regular_residuals(wells, camps, years):
     """Per well and season, observed minus rain-expected change over `years`,
     regular transitions only (the previous reading is the previous campaign)."""
@@ -155,7 +162,7 @@ def regular_residuals(wells, camps, years):
         h = w["h"]
         for prev, cur in zip(h[:-1], h[1:]):
             c = camps[cur[0]]
-            if cur[0] == prev[0] + 1 and c["year"] in years:
+            if regular(camps, prev[0], cur[0]) and c["year"] in years:
                 res[i][SEASONS.index(c["season"])].append(cur[2] - cur[3])
     return res
 
@@ -273,7 +280,7 @@ def main():
     D0 = deltas[SHIFTS.index(0)]
     # the rebuilt inputs must reproduce build_ui_data.py's predictions on real readings
     diff = [abs(D0[i, YEARS.index(camps[cur[0]]["year"]), SEASONS.index(camps[cur[0]]["season"])] - cur[3])
-            for i, w in enumerate(wells) for prev, cur in zip(w["h"][:-1], w["h"][1:]) if cur[0] == prev[0] + 1]
+            for i, w in enumerate(wells) for prev, cur in zip(w["h"][:-1], w["h"][1:]) if regular(camps, prev[0], cur[0])]
     diff = np.asarray(diff)
     print(f"  parity on {len(diff):,} real readings: median |diff| {np.median(diff):.4f} m, "
           f"99th pct {np.percentile(diff, 99):.4f} m")

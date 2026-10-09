@@ -1,0 +1,27 @@
+# Not needed to build or run the app on Vercel
+.venv/
+notebooks/
+reports/
+kaggle/
+models/artifacts/
+simulator/artifacts/sim.pt
+*.ipynb
+
+# Full data and local builds: the deployment builds its own from data/sample/
+data/cgwb/
+data/derived/
+data/imd_rainfall/
+data/geo/
+data/training/
+data/kaggle/
+data/kaggle_stage/
+data/sample/training/
+simulator/out/
+simulator/ui/data/rain/
+simulator/ui/data/scenario/
+simulator/ui/data/forecast/
+simulator/ui/data/wells.json
+simulator/ui/data/pressure.json
+simulator/ui/data/campaigns.json
+simulator/ui/data/sim.onnx
+simulator/ui/data/sim_meta.json

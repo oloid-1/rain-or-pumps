@@ -25,13 +25,22 @@ The repository carries a small sample, one state's wells (Karnataka, 217) and th
 rain over it, so everything runs without the full download.
 
 ```bash
-pip install -r requirements.txt
-make sample-app            # build from data/sample/, then serve at http://localhost:8000
-make test                  # API tests
+pip install -r requirements.txt     # the app: FastAPI, ONNX runtime, pandas
+make sample-app                     # build from data/sample/, then serve at http://localhost:8000
 ```
 
-Full data (2,759 wells, all India): fetch it as described in
-[data/README.md](data/README.md), then `make sequences ui-data forecast api`.
+`requirements-train.txt` adds what training the models, the notebooks and the tests
+need (PyTorch, LightGBM, Jupyter, pytest). Full data (2,759 wells, all India): fetch
+it as described in [data/README.md](data/README.md), then
+`DATA_DIR=data python scripts/build_app.py` and `make api`.
+
+## Deploying on Vercel
+
+`vercel.json` deploys the app as one FastAPI service (`main.py`). The build step,
+`scripts/build_app.py`, builds the app's data from `data/sample/`, so the deployment
+needs only the repository: import it in Vercel, or run `vercel deploy`. It installs
+`requirements.txt` only (about 400 MB, under the 500 MB function limit) and allows
+60 s per request for the live what-if runs.
 
 ## Which model, and why
 
@@ -61,6 +70,7 @@ A random (well-grouped) split puts all three at R² 0.49-0.51: see `notebooks/03
 |---|---|
 | `data/` | `sample/` (tracked, 2.3 MB), `reference/` district outlines; the full data lives here locally. See `data/README.md` |
 | `models/` | Training-table and sequence builders, the three model families, their results and write-ups |
+| `main.py`, `vercel.json` | The app's entrypoint and the Vercel deployment |
 | `simulator/` | The chosen model (`train_sim.py`, `artifacts/`), the FastAPI service (`api/`), forecast and what-if engine (`forecast/`), map layers (`geo/`) and the UI (`ui/`) |
 | `kaggle/` | Runs training on a Kaggle GPU |
 | `notebooks/` | Exploration and the random-split comparison of the three models |

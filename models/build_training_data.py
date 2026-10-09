@@ -26,7 +26,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import xarray as xr
 
 REPO = Path(__file__).resolve().parents[1]
 # DATA_DIR=data/sample runs everything on the small sample instead of the full data
@@ -189,6 +188,7 @@ def _rain_from_cube(wells_xy):
 
 
 def _rain_from_netcdf(wells_xy):
+    import xarray as xr   # only needed without the rain cube
     wlat = xr.DataArray(wells_xy.lat.values, dims="w")
     wlon = xr.DataArray(wells_xy.lon.values, dims="w")
 

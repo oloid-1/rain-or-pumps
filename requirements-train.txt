@@ -1,0 +1,22 @@
+# training, notebooks and tests, on top of the app's requirements
+-r requirements.txt
+
+# data
+xarray>=2024.1
+netcdf4>=1.6
+scipy>=1.11
+
+# models
+scikit-learn>=1.4
+lightgbm>=4.0
+torch>=2.1
+
+# figures and notebooks
+matplotlib>=3.8
+seaborn>=0.13
+jupyter
+ipykernel
+
+# tests
+pytest>=8.0
+httpx>=0.27

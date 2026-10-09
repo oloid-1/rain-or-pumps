@@ -44,44 +44,13 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 sys.path.insert(0, str(REPO / "models"))
 from bilstm import RainBiLSTM  # noqa: E402
-from train_bilstm import load, channel_stats, scale, LOG_CHANNELS, SIGNED_LOG_CHANNELS  # noqa: E402
+from features import (load, channel_stats, scale, encode_static, LOG_CHANNELS,  # noqa: E402,F401
+                      SIGNED_LOG_CHANNELS, STATIC_NUMERIC, STATIC_CATEGORICAL)
 from train_transformer import metrics, TARGET, SEED  # noqa: E402
 from build_training_data import OUT_DIR  # noqa: E402
 from transformer import count_params  # noqa: E402
 
-STATIC_NUMERIC = ["well_depth_m", "sy", "days_since_prev", "rain_normal_annual_mm",
-                  "rain_normal_season_mm", "rain_normal_monsoon_mm"]
-STATIC_CATEGORICAL = ["season", "aquifer", "well_type", "transition"]
-
-
 # --------------------------------------------------------------------------
-def encode_static(tab, train_mask, stats=None):
-    """Standardise the static numerics and index the categoricals with statistics
-    from TRAIN rows, or with `stats` from a trained model's sim_meta.json, and
-    return the statistics so the browser can repeat it exactly."""
-    X = tab[STATIC_NUMERIC].to_numpy("float32")
-    if stats:
-        med, mu, sd = (np.asarray(stats[k], "float32") for k in ("median", "mean", "std"))
-        X = np.where(np.isfinite(X), X, med)
-    else:
-        med = np.nanmedian(X[train_mask], axis=0)
-        X = np.where(np.isfinite(X), X, med)
-        mu, sd = X[train_mask].mean(0), X[train_mask].std(0)
-        sd[sd < 1e-6] = 1.0
-    Xn = ((X - mu) / sd).astype("float32")
-
-    codes, levels_out = [], {}
-    for c in STATIC_CATEGORICAL:
-        v = tab[c].astype(str).fillna("unknown")
-        levels = stats["categorical"][c] if stats else sorted(v[train_mask].unique())
-        idx = pd.Index(levels).get_indexer(v)
-        codes.append(np.where(idx < 0, len(levels), idx).astype("int64"))
-        levels_out[c] = levels
-    stats = dict(numeric=STATIC_NUMERIC, median=med.tolist(), mean=mu.tolist(),
-                 std=sd.tolist(), categorical=levels_out)
-    return Xn, np.stack(codes, 1), [len(levels_out[c]) + 1 for c in STATIC_CATEGORICAL], stats
-
-
 class RainScaler(nn.Module):
     """Scales the rain of an already-scaled sequence batch by a factor, in torch,
     so the penalty is differentiable. Mirrors train_bilstm.rain_scaled:
